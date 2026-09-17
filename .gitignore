@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+
+# Secrets & local config
+.env
+
+# Tooling caches
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# Data & artifacts (tracked selectively)
+data/*
+!data/seed_channels.csv
+models_artifacts/
+wandb/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Frontend (Phase 6)
+node_modules/
+web/dist/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
