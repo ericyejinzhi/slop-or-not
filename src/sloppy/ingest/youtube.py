@@ -184,3 +184,67 @@ def fetch_videos_metadata(client, video_ids: list[str]) -> list[VideoMeta]:
         )
         results.extend(_parse_video(item) for item in response.get("items", []))
     return results
+
+
+class CommentMeta(BaseModel):
+    id: str
+    video_id: str
+    author_display_name: str | None = None
+    author_channel_id: str | None = None
+    text: str
+    like_count: int | None = None
+    reply_count: int | None = None
+    published_at: datetime
+
+
+def _parse_comment_thread(item: dict, video_id: str) -> CommentMeta:
+    top_level_comment = item["snippet"]["topLevelComment"]
+    snippet = top_level_comment["snippet"]
+    return CommentMeta(
+        id=top_level_comment["id"],
+        video_id=video_id,
+        author_display_name=snippet.get("authorDisplayName"),
+        author_channel_id=(snippet.get("authorChannelId") or {}).get("value"),
+        text=snippet.get("textOriginal", ""),
+        like_count=_int_or_none(snippet.get("likeCount")),
+        reply_count=_int_or_none(item["snippet"].get("totalReplyCount")),
+        published_at=snippet["publishedAt"],
+    )
+
+
+def fetch_top_comments(client, video_id: str, limit: int = 100) -> list[CommentMeta]:
+    """Fetch up to `limit` top-level comments, sorted by relevance (mirrors YouTube's own
+    "Top comments" sort). Returns [] if comments are disabled for the video, instead of raising,
+    so one video with comments off doesn't abort a whole channel ingest.
+    """
+    comments: list[CommentMeta] = []
+    page_token = None
+    while len(comments) < limit:
+        remaining = limit - len(comments)
+        try:
+            response = _with_retry(
+                lambda pt=page_token, r=remaining: (
+                    client.commentThreads()
+                    .list(
+                        part="snippet",
+                        videoId=video_id,
+                        maxResults=min(100, r),
+                        order="relevance",
+                        textFormat="plainText",
+                        pageToken=pt,
+                    )
+                    .execute()
+                )
+            )
+        except HttpError as exc:
+            if _error_reason(exc) == "commentsDisabled":
+                logger.info("Comments disabled for video %s", video_id)
+                return []
+            raise
+
+        comments.extend(_parse_comment_thread(item, video_id) for item in response.get("items", []))
+        page_token = response.get("nextPageToken")
+        if not page_token:
+            break
+
+    return comments[:limit]

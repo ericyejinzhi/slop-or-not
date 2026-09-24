@@ -1,4 +1,4 @@
-from sloppy.ingest.youtube import _best_thumbnail_url, parse_duration
+from sloppy.ingest.youtube import _best_thumbnail_url, _parse_comment_thread, parse_duration
 
 
 def test_parse_duration_hours_minutes_seconds():
@@ -34,3 +34,36 @@ def test_best_thumbnail_url_falls_back_when_missing_higher_res():
 
 def test_best_thumbnail_url_empty_returns_none():
     assert _best_thumbnail_url({}) is None
+
+
+def _comment_thread_item(**overrides) -> dict:
+    snippet = {
+        "authorDisplayName": "Some Viewer",
+        "authorChannelId": {"value": "UCviewerchannel"},
+        "textOriginal": "great video",
+        "likeCount": 12,
+        "publishedAt": "2026-01-01T00:00:00Z",
+    }
+    snippet.update(overrides)
+    return {
+        "snippet": {
+            "totalReplyCount": 3,
+            "topLevelComment": {"id": "comment123", "snippet": snippet},
+        }
+    }
+
+
+def test_parse_comment_thread_extracts_fields():
+    comment = _parse_comment_thread(_comment_thread_item(), video_id="video123")
+    assert comment.id == "comment123"
+    assert comment.video_id == "video123"
+    assert comment.author_display_name == "Some Viewer"
+    assert comment.author_channel_id == "UCviewerchannel"
+    assert comment.text == "great video"
+    assert comment.like_count == 12
+    assert comment.reply_count == 3
+
+
+def test_parse_comment_thread_handles_missing_author_channel_id():
+    comment = _parse_comment_thread(_comment_thread_item(authorChannelId=None), video_id="video123")
+    assert comment.author_channel_id is None
