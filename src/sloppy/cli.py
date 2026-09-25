@@ -4,6 +4,7 @@ import sys
 import typer
 
 from sloppy.config import get_settings
+from sloppy.ingest.pipeline import ingest_channel
 from sloppy.ingest.thumbnails import (
     download_thumbnail_bytes,
     extract_thumbnail_url,
@@ -21,11 +22,6 @@ from sloppy.storage import ensure_bucket, get_s3_client
 app = typer.Typer(no_args_is_help=True, help="Slop-or-not: YouTube content quality classifier.")
 ingest_app = typer.Typer(no_args_is_help=True, help="YouTube ingestion commands (Phase 1).")
 app.add_typer(ingest_app, name="ingest")
-
-
-@app.callback()
-def main() -> None:
-    """Slop-or-not command line tools."""
 
 
 @app.command()
@@ -167,6 +163,30 @@ def inspect_thumbnail(video_id: str) -> None:
     typer.echo(f"  content-type:  {content_type}")
     typer.echo(f"  size:          {len(content)} bytes")
     typer.echo(f"  s3 bucket/key: {settings.s3_bucket_thumbnails}/{key}")
+
+
+@ingest_app.command("channel")
+def run_channel_ingest(id_or_handle: str) -> None:
+    """Ingest a channel end-to-end: videos, comments, thumbnails. Safe to re-run (upserts)."""
+    settings = get_settings()
+    if not settings.youtube_api_key:
+        typer.secho("[FAIL] YOUTUBE_API_KEY is not set in .env", fg="red")
+        raise typer.Exit(1)
+
+    try:
+        summary = ingest_channel(settings, id_or_handle)
+    except ValueError as exc:
+        typer.secho(f"[FAIL] {exc}", fg="red")
+        raise typer.Exit(1) from exc
+
+    typer.secho(f"Ingested channel {summary.channel_id}", bold=True)
+    typer.echo(f"  videos upserted:     {summary.videos_upserted}")
+    typer.echo(f"  comments upserted:   {summary.comments_upserted}")
+    typer.echo(f"  thumbnails upserted: {summary.thumbnails_upserted}")
+    if summary.errors:
+        typer.secho(f"\n{len(summary.errors)} issue(s):", fg="yellow")
+        for err in summary.errors:
+            typer.echo(f"  - {err}")
 
 
 if __name__ == "__main__":
