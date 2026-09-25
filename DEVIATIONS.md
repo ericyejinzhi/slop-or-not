@@ -4,13 +4,13 @@ Running log of places where the implementation diverges from [ROADMAP.md](ROADMA
 with the reason and any follow-up needed. Add an entry whenever reality forces a change
 the roadmap didn't anticipate.
 
-## Phase 0 — Scaffolding (2026-09-17)
+## Phase 0 - Scaffolding (2026-09-17)
 
 ### MinIO image pulled from Quay, not Docker Hub
 
 - **Intended**: `minio/minio:latest` from Docker Hub.
 - **Actual**: `quay.io/minio/minio:latest` in `docker-compose.yml`.
-- **Why**: the Docker Hub repository is no longer pullable ("pull access denied") — MinIO
+- **Why**: the Docker Hub repository is no longer pullable ("pull access denied") - MinIO
   distributes its community images via Quay now.
 - **Follow-up**: none; Quay is the canonical source.
 
