@@ -4,6 +4,11 @@ import sys
 import typer
 
 from sloppy.config import get_settings
+from sloppy.ingest.thumbnails import (
+    download_thumbnail_bytes,
+    extract_thumbnail_url,
+    upload_thumbnail,
+)
 from sloppy.ingest.youtube import (
     fetch_top_comments,
     fetch_videos_metadata,
@@ -11,6 +16,7 @@ from sloppy.ingest.youtube import (
     iter_playlist_video_ids,
     resolve_channel,
 )
+from sloppy.storage import ensure_bucket, get_s3_client
 
 app = typer.Typer(no_args_is_help=True, help="Slop-or-not: YouTube content quality classifier.")
 ingest_app = typer.Typer(no_args_is_help=True, help="YouTube ingestion commands (Phase 1).")
@@ -136,6 +142,31 @@ def inspect_video(video_id: str) -> None:
     for comment in comments:
         preview = comment.text.replace("\n", " ")[:80]
         typer.echo(f"  - {comment.author_display_name} ({comment.like_count} likes): {preview}")
+
+
+@ingest_app.command("inspect-thumbnail")
+def inspect_thumbnail(video_id: str) -> None:
+    """Extract, download, and upload a video's thumbnail to MinIO. No DB writes."""
+    settings = get_settings()
+
+    try:
+        thumb_info = extract_thumbnail_url(video_id)
+    except ValueError as exc:
+        typer.secho(f"[FAIL] {exc}", fg="red")
+        raise typer.Exit(1) from exc
+
+    content, content_type = download_thumbnail_bytes(thumb_info.url)
+
+    s3_client = get_s3_client(settings)
+    ensure_bucket(s3_client, settings.s3_bucket_thumbnails)
+    key = upload_thumbnail(s3_client, settings, video_id, content, content_type)
+
+    typer.secho(f"Uploaded thumbnail for {video_id}", bold=True)
+    typer.echo(f"  source url:    {thumb_info.url}")
+    typer.echo(f"  dimensions:    {thumb_info.width}x{thumb_info.height}")
+    typer.echo(f"  content-type:  {content_type}")
+    typer.echo(f"  size:          {len(content)} bytes")
+    typer.echo(f"  s3 bucket/key: {settings.s3_bucket_thumbnails}/{key}")
 
 
 if __name__ == "__main__":
