@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # Labeling (Phase 2)
     labeler_name: str = ""
 
+    # Model training (Phase 3). W&B tracking is best-effort: training works fully with
+    # this blank - see sloppy.models.tracking.
+    wandb_api_key: str = ""
+    wandb_project: str = "slop-or-not"
+
     @property
     def database_url(self) -> str:
         return (

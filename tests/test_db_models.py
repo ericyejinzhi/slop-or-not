@@ -9,6 +9,7 @@ def test_all_tables_registered():
         "comments",
         "thumbnails",
         "labels",
+        "video_scores",
     }
 
 
@@ -23,4 +24,5 @@ def test_foreign_keys_point_at_expected_tables():
         ("comments", "videos"),
         ("thumbnails", "videos"),
         ("labels", "videos"),
+        ("video_scores", "videos"),
     }

@@ -3,12 +3,14 @@ import itertools
 import sys
 from pathlib import Path
 
+import pandas as pd
 import typer
 from sqlalchemy import func
 
 from sloppy.config import get_settings
-from sloppy.db.models import Channel, Label, Thumbnail, Video
+from sloppy.db.models import Channel, Label, Thumbnail, Video, VideoScore
 from sloppy.db.session import session_scope
+from sloppy.features.dataset import assemble_dataset, load_splits
 from sloppy.ingest.pipeline import ingest_channel
 from sloppy.ingest.thumbnails import (
     download_thumbnail_bytes,
@@ -27,16 +29,24 @@ from sloppy.label.keyboard import action_for_key, read_key
 from sloppy.label.labels import record_label
 from sloppy.label.pool import candidate_videos, consistency_sample, sample_pool
 from sloppy.label.split import assign_channels_to_splits, canonical_labels, channel_stats
+from sloppy.models.evaluate import BinaryMetrics, evaluate
+from sloppy.models.report import top_errors
+from sloppy.models.scores import upsert_video_score
+from sloppy.models.tracking import finish, log_metrics, start_run
+from sloppy.models.train import MODEL_NAMES, save_model, score_dataframe, train_model
 from sloppy.storage import ensure_bucket, get_s3_client
 
 app = typer.Typer(no_args_is_help=True, help="Slop-or-not: YouTube content quality classifier.")
 ingest_app = typer.Typer(no_args_is_help=True, help="YouTube ingestion commands (Phase 1).")
 label_app = typer.Typer(no_args_is_help=True, help="Labeling commands (Phase 2).")
+model_app = typer.Typer(no_args_is_help=True, help="Baseline model commands (Phase 3).")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(label_app, name="label")
+app.add_typer(model_app, name="model")
 
 DEFAULT_SEED_CSV = Path("data/seed_channels.csv")
 DEFAULT_SPLITS_CSV = Path("data/splits.csv")
+DEFAULT_MODEL_ARTIFACTS_DIR = Path("models_artifacts")
 
 
 def _normalize_handle(handle: str) -> str:
@@ -543,6 +553,207 @@ def label_stats() -> None:
         )
     else:
         typer.echo("Consistency check: no videos have been relabeled yet.")
+
+
+@model_app.command("train")
+def train_command(
+    model: str = typer.Option("both", help="'logistic_regression', 'xgboost', or 'both'"),
+    splits_csv: Path = typer.Option(DEFAULT_SPLITS_CSV),  # noqa: B008
+    artifacts_dir: Path = typer.Option(DEFAULT_MODEL_ARTIFACTS_DIR),  # noqa: B008
+) -> None:
+    """Train the baseline model(s) on data/splits.csv, persist the artifact, and score
+    every labeled video into video_scores. Run `slop model evaluate` afterward to see
+    metrics."""
+    settings = get_settings()
+
+    if model != "both" and model not in MODEL_NAMES:
+        typer.secho(
+            f"[FAIL] --model must be 'both' or one of {MODEL_NAMES}, got {model!r}", fg="red"
+        )
+        raise typer.Exit(1)
+
+    if not splits_csv.exists():
+        typer.secho(f"[FAIL] {splits_csv} not found - run `slop label make-splits` first", fg="red")
+        raise typer.Exit(1)
+
+    splits = load_splits(splits_csv)
+    with session_scope() as session:
+        df = assemble_dataset(session, splits)
+
+    if df.empty:
+        typer.secho("No labeled videos found in splits.csv - nothing to train on.", fg="yellow")
+        raise typer.Exit(1)
+
+    train_df = df[df["split"] == "train"]
+    if train_df.empty:
+        typer.secho("No rows in the train split - nothing to train on.", fg="red")
+        raise typer.Exit(1)
+
+    model_names = MODEL_NAMES if model == "both" else (model,)
+
+    for model_name in model_names:
+        typer.secho(f"Training {model_name} on {len(train_df)} row(s)...", bold=True)
+        run = start_run(settings, config={"model_name": model_name, "train_rows": len(train_df)})
+
+        trained = train_model(model_name, train_df)
+        model_path = save_model(trained, artifacts_dir, train_row_count=len(train_df))
+        typer.echo(f"  saved to {model_path}")
+
+        scores = score_dataframe(trained, df)
+        with session_scope() as session:
+            for idx, row in df.iterrows():
+                score = float(scores[idx])
+                predicted_label = "down" if score >= 0.5 else "up"
+                upsert_video_score(
+                    session,
+                    video_id=row["video_id"],
+                    model_name=model_name,
+                    model_version=trained.version,
+                    score=score,
+                    predicted_label=predicted_label,
+                    split=row["split"],
+                )
+        typer.echo(f"  scored {len(df)} video(s), version={trained.version}")
+
+        log_metrics(run, {"train_rows": len(train_df), "scored_rows": len(df)})
+        finish(run)
+
+
+def _print_metrics(label: str, m: BinaryMetrics) -> None:
+    pr_auc = "nan" if pd.isna(m.pr_auc) else f"{m.pr_auc:.3f}"
+    typer.echo(
+        f"  {label}: n={m.n} pr_auc={pr_auc} f1={m.f1:.3f} tp={m.tp} fp={m.fp} tn={m.tn} fn={m.fn}"
+    )
+
+
+@model_app.command("evaluate")
+def evaluate_command(
+    model_name: str = typer.Option(..., help="e.g. 'logistic_regression' or 'xgboost'"),
+    model_version: str = typer.Option(..., help="version string printed by `slop model train`"),
+    split: str = typer.Option("val", help="'val' or 'test'"),
+) -> None:
+    """PR-AUC/F1/confusion-matrix metrics vs. the majority-class baseline, overall and
+    per-channel (to catch channel-identity leakage)."""
+    with session_scope() as session:
+        canonical = canonical_labels(session)
+        score_rows = (
+            session.query(VideoScore.video_id, VideoScore.score, VideoScore.split)
+            .filter(VideoScore.model_name == model_name, VideoScore.model_version == model_version)
+            .all()
+        )
+
+    if not score_rows:
+        typer.secho(f"[FAIL] No scores found for {model_name} version {model_version}", fg="red")
+        raise typer.Exit(1)
+
+    records = []
+    for video_id, score, row_split in score_rows:
+        if video_id not in canonical:
+            continue
+        channel_id, label = canonical[video_id]
+        records.append(
+            {
+                "video_id": video_id,
+                "channel_id": channel_id,
+                "y": 1 if label == "down" else 0,
+                "score": score,
+                "split": row_split,
+            }
+        )
+
+    df = pd.DataFrame.from_records(records)
+    if df.empty:
+        typer.secho("No scored videos with a canonical (non-skip) label found.", fg="yellow")
+        raise typer.Exit(1)
+
+    train_y = df[df["split"] == "train"]["y"]
+    eval_df = df[df["split"] == split]
+    if train_y.empty:
+        typer.secho("[FAIL] No train-split rows found - can't compute majority baseline.", fg="red")
+        raise typer.Exit(1)
+    if eval_df.empty:
+        typer.secho(f"No rows in the '{split}' split for this model/version.", fg="yellow")
+        raise typer.Exit(1)
+
+    report = evaluate(eval_df, train_y)
+
+    typer.secho(f"Evaluation for {model_name} v{model_version} on '{split}' split:", bold=True)
+    _print_metrics("model   ", report.overall)
+    _print_metrics("baseline", report.majority_baseline)
+
+    typer.echo("\nPer-channel:")
+    for channel_id, metrics in sorted(report.per_channel.items()):
+        _print_metrics(channel_id, metrics)
+
+
+@model_app.command("report")
+def report_command(
+    model_name: str = typer.Option(..., help="e.g. 'logistic_regression' or 'xgboost'"),
+    model_version: str = typer.Option(..., help="version string printed by `slop model train`"),
+    split: str = typer.Option("test", help="'val' or 'test'"),
+    n: int = typer.Option(20, help="how many of each error type to show"),
+) -> None:
+    """Top-N most confidently wrong predictions (false positives and false negatives) -
+    the error-analysis step. See docs/writeups/phase-3 for why this is a CLI report
+    rather than a notebook."""
+    with session_scope() as session:
+        canonical = canonical_labels(session)
+        rows = (
+            session.query(
+                VideoScore.video_id,
+                VideoScore.score,
+                VideoScore.predicted_label,
+                VideoScore.split,
+                Video.title,
+            )
+            .join(Video, Video.id == VideoScore.video_id)
+            .filter(
+                VideoScore.model_name == model_name,
+                VideoScore.model_version == model_version,
+                VideoScore.split == split,
+            )
+            .all()
+        )
+
+    records = []
+    for video_id, score, predicted_label, row_split, title in rows:
+        if video_id not in canonical:
+            continue
+        channel_id, label = canonical[video_id]
+        records.append(
+            {
+                "video_id": video_id,
+                "channel_id": channel_id,
+                "title": title,
+                "y": 1 if label == "down" else 0,
+                "score": score,
+                "predicted_label": predicted_label,
+                "split": row_split,
+            }
+        )
+
+    df = pd.DataFrame.from_records(records)
+    if df.empty:
+        typer.secho(
+            f"No scored, labeled videos found for {model_name} v{model_version} on '{split}'.",
+            fg="yellow",
+        )
+        raise typer.Exit(1)
+
+    def _print_table(title: str, errors: pd.DataFrame) -> None:
+        typer.secho(f"\n{title} ({len(errors)}):", bold=True)
+        if errors.empty:
+            typer.echo("  (none)")
+            return
+        for _, row in errors.iterrows():
+            typer.echo(f"  score={row['score']:.3f}  {row['title']!r}  ({row['channel_id']})")
+
+    _print_table(
+        "Top false positives (predicted down, actually up)", top_errors(df, "false_positive", n)
+    )
+    _print_table(
+        "Top false negatives (predicted up, actually down)", top_errors(df, "false_negative", n)
+    )
 
 
 if __name__ == "__main__":

@@ -1,6 +1,15 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Integer, Text
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -80,3 +89,24 @@ class Label(Base, TimestampMixin):
     labeler: Mapped[str] = mapped_column(Text)
     label: Mapped[str] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
+
+
+class VideoScore(Base, TimestampMixin):
+    """A model's prediction for a video. Keyed on (video_id, model_name, model_version) -
+    unlike Label, this is upserted, not append-only: a score is a reproducible function of
+    a specific model version scoring a specific video, so re-scoring with the SAME model
+    version overwrites, while different model names/versions coexist for comparison.
+    """
+
+    __tablename__ = "video_scores"
+    __table_args__ = (
+        CheckConstraint("predicted_label IN ('up', 'down')", name="ck_video_scores_label_value"),
+        Index("ix_video_scores_model_name_version", "model_name", "model_version"),
+    )
+
+    video_id: Mapped[str] = mapped_column(Text, ForeignKey("videos.id"), primary_key=True)
+    model_name: Mapped[str] = mapped_column(Text, primary_key=True)
+    model_version: Mapped[str] = mapped_column(Text, primary_key=True)
+    score: Mapped[float] = mapped_column(Float)
+    predicted_label: Mapped[str] = mapped_column(Text)
+    split: Mapped[str] = mapped_column(Text)
