@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # YouTube Data API v3
     youtube_api_key: str = ""
 
+    # Labeling (Phase 2)
+    labeler_name: str = ""
+
     @property
     def database_url(self) -> str:
         return (

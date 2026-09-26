@@ -3,7 +3,13 @@ from sloppy.db.base import Base
 
 
 def test_all_tables_registered():
-    assert set(Base.metadata.tables) == {"channels", "videos", "comments", "thumbnails"}
+    assert set(Base.metadata.tables) == {
+        "channels",
+        "videos",
+        "comments",
+        "thumbnails",
+        "labels",
+    }
 
 
 def test_foreign_keys_point_at_expected_tables():
@@ -16,4 +22,5 @@ def test_foreign_keys_point_at_expected_tables():
         ("videos", "channels"),
         ("comments", "videos"),
         ("thumbnails", "videos"),
+        ("labels", "videos"),
     }

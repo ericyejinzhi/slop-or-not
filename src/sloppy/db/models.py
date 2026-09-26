@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Text
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -62,3 +62,21 @@ class Thumbnail(Base, TimestampMixin):
     height: Mapped[int | None] = mapped_column(BigInteger)
     source_url: Mapped[str] = mapped_column(Text)
     downloaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class Label(Base, TimestampMixin):
+    """A single labeling judgment. video_id is intentionally NOT unique - relabeling the
+    same video (e.g. a consistency spot-check) is expected to add a new row, not overwrite
+    the old one. `created_at` (from TimestampMixin) is that judgment's timestamp.
+    """
+
+    __tablename__ = "labels"
+    __table_args__ = (
+        CheckConstraint("label IN ('up', 'down', 'skip')", name="ck_labels_label_value"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    video_id: Mapped[str] = mapped_column(Text, ForeignKey("videos.id"), index=True)
+    labeler: Mapped[str] = mapped_column(Text)
+    label: Mapped[str] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
