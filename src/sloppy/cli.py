@@ -3,14 +3,27 @@ import itertools
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import typer
 from sqlalchemy import func
 
 from sloppy.config import get_settings
-from sloppy.db.models import Channel, Label, Thumbnail, Video, VideoScore
+from sloppy.db.models import Channel, Comment, Label, Thumbnail, Video, VideoScore
 from sloppy.db.session import session_scope
+from sloppy.features.comment_topics import cluster_comment_topics
 from sloppy.features.dataset import assemble_dataset, load_splits
+from sloppy.features.embeddings import EMBEDDING_DIM, EMBEDDING_MODEL_NAME, embed_texts
+from sloppy.features.nlp_store import upsert_video_nlp_features
+from sloppy.features.sentiment import SENTIMENT_MODEL_NAME, aggregate_sentiment, score_comments
+from sloppy.features.title_intent import score_title_intent
+from sloppy.features.vision import (
+    CLIP_MODEL_NAME,
+    embed_image,
+    load_thumbnail_image,
+    zero_shot_scores,
+)
+from sloppy.features.vision_store import upsert_video_vision_features
 from sloppy.ingest.pipeline import ingest_channel
 from sloppy.ingest.thumbnails import (
     download_thumbnail_bytes,
@@ -29,20 +42,29 @@ from sloppy.label.keyboard import action_for_key, read_key
 from sloppy.label.labels import record_label
 from sloppy.label.pool import candidate_videos, consistency_sample, sample_pool
 from sloppy.label.split import assign_channels_to_splits, canonical_labels, channel_stats
+from sloppy.models.ablation import format_ablation_table
 from sloppy.models.evaluate import BinaryMetrics, evaluate
 from sloppy.models.report import top_errors
 from sloppy.models.scores import upsert_video_score
 from sloppy.models.tracking import finish, log_metrics, start_run
-from sloppy.models.train import MODEL_NAMES, save_model, score_dataframe, train_model
+from sloppy.models.train import (
+    FEATURE_GROUPS,
+    MODEL_NAMES,
+    save_model,
+    score_dataframe,
+    train_model,
+)
 from sloppy.storage import ensure_bucket, get_s3_client
 
 app = typer.Typer(no_args_is_help=True, help="Slop-or-not: YouTube content quality classifier.")
 ingest_app = typer.Typer(no_args_is_help=True, help="YouTube ingestion commands (Phase 1).")
 label_app = typer.Typer(no_args_is_help=True, help="Labeling commands (Phase 2).")
 model_app = typer.Typer(no_args_is_help=True, help="Baseline model commands (Phase 3).")
+features_app = typer.Typer(no_args_is_help=True, help="NLP/vision feature commands (Phase 4).")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(label_app, name="label")
 app.add_typer(model_app, name="model")
+app.add_typer(features_app, name="features")
 
 DEFAULT_SEED_CSV = Path("data/seed_channels.csv")
 DEFAULT_SPLITS_CSV = Path("data/splits.csv")
@@ -754,6 +776,190 @@ def report_command(
     _print_table(
         "Top false negatives (predicted up, actually down)", top_errors(df, "false_negative", n)
     )
+
+
+@features_app.command("compute-nlp")
+def compute_nlp(
+    video_id: str | None = typer.Option(None, help="Only process this one video"),
+    limit: int | None = typer.Option(None, help="Only process the first N videos"),
+) -> None:
+    """Compute + persist sentiment, comment-topic, and title-intent NLP features
+    (including embeddings) for ingested videos. Idempotent - re-running overwrites."""
+    with session_scope() as session:
+        query = session.query(Video)
+        if video_id:
+            query = query.filter(Video.id == video_id)
+        if limit:
+            query = query.limit(limit)
+        videos = query.all()
+
+    if not videos:
+        typer.secho("No matching videos found.", fg="yellow")
+        raise typer.Exit(1)
+
+    processed = 0
+    for video in videos:
+        with session_scope() as session:
+            comments = session.query(Comment).filter(Comment.video_id == video.id).all()
+        texts = [c.text for c in comments]
+
+        sentiment_scores = score_comments(texts)
+        sentiment_agg = aggregate_sentiment(texts, sentiment_scores)
+
+        comment_embeddings = embed_texts(texts) if texts else np.empty((0, EMBEDDING_DIM))
+        comment_embedding_mean = comment_embeddings.mean(axis=0).tolist() if texts else None
+        topic_agg = cluster_comment_topics(comment_embeddings, sentiment_scores)
+
+        intent = score_title_intent(video.title)
+        title_embedding = embed_texts([video.title])[0].tolist()
+        description_embedding = (
+            embed_texts([video.description])[0].tolist() if video.description else None
+        )
+
+        with session_scope() as session:
+            upsert_video_nlp_features(
+                session,
+                video_id=video.id,
+                comment_count_scored=sentiment_agg.comment_count_scored,
+                sentiment_mean=sentiment_agg.sentiment_mean,
+                sentiment_std=sentiment_agg.sentiment_std,
+                sentiment_negative_share=sentiment_agg.sentiment_negative_share,
+                slop_keyword_rate=sentiment_agg.slop_keyword_rate,
+                topic_cluster_count=topic_agg.topic_cluster_count,
+                topic_top_cluster_share=topic_agg.topic_top_cluster_share,
+                topic_top_cluster_sentiment=topic_agg.topic_top_cluster_sentiment,
+                topic_sentiment_spread=topic_agg.topic_sentiment_spread,
+                title_lure_score=intent.lure_score,
+                title_mysterious_score=intent.mysterious_score,
+                title_transparent_score=intent.transparent_score,
+                title_embedding=title_embedding,
+                description_embedding=description_embedding,
+                comment_embedding_mean=comment_embedding_mean,
+                sentiment_model=SENTIMENT_MODEL_NAME,
+                embedding_model=EMBEDDING_MODEL_NAME,
+            )
+        processed += 1
+        typer.echo(f"  {video.id}: {len(texts)} comment(s) scored")
+
+    typer.secho(f"Computed NLP features for {processed} video(s).", bold=True)
+
+
+@features_app.command("compute-vision")
+def compute_vision(
+    video_id: str | None = typer.Option(None, help="Only process this one video"),
+    limit: int | None = typer.Option(None, help="Only process the first N videos"),
+) -> None:
+    """Compute + persist CLIP thumbnail embeddings + zero-shot scores for ingested
+    videos that have a thumbnail on record. Idempotent - re-running overwrites."""
+    settings = get_settings()
+    s3_client = get_s3_client(settings)
+
+    with session_scope() as session:
+        query = session.query(Video, Thumbnail).join(Thumbnail, Thumbnail.video_id == Video.id)
+        if video_id:
+            query = query.filter(Video.id == video_id)
+        if limit:
+            query = query.limit(limit)
+        rows = query.all()
+
+    if not rows:
+        typer.secho("No videos with a thumbnail on record found.", fg="yellow")
+        raise typer.Exit(1)
+
+    processed = 0
+    for video, thumbnail in rows:
+        try:
+            image = load_thumbnail_image(s3_client, thumbnail.s3_bucket, thumbnail.s3_key)
+            image_vec = embed_image(image)
+            scores = zero_shot_scores(image)
+        except Exception as exc:  # noqa: BLE001 - one bad thumbnail must not abort the run
+            typer.secho(f"[warn] {video.id}: {exc}", fg="yellow")
+            continue
+
+        with session_scope() as session:
+            upsert_video_vision_features(
+                session,
+                video_id=video.id,
+                image_embedding=image_vec.tolist(),
+                clip_clickbait_score=scores["clip_clickbait_score"],
+                clip_ai_generated_score=scores["clip_ai_generated_score"],
+                clip_text_heavy_score=scores["clip_text_heavy_score"],
+                clip_model=CLIP_MODEL_NAME,
+            )
+        processed += 1
+        typer.echo(f"  {video.id}: embedded + scored")
+
+    typer.secho(f"Computed vision features for {processed} video(s).", bold=True)
+
+
+@model_app.command("ablation")
+def ablation_command(
+    model: str = typer.Option("xgboost", help="which estimator to use for every feature group"),
+    splits_csv: Path = typer.Option(DEFAULT_SPLITS_CSV),  # noqa: B008
+    artifacts_dir: Path = typer.Option(DEFAULT_MODEL_ARTIFACTS_DIR),  # noqa: B008
+    split: str = typer.Option("val", help="which split to evaluate each variant on"),
+) -> None:
+    """Train the same estimator on 3 cumulative feature groups (metadata / +text / all)
+    and print a side-by-side comparison table. Each variant is persisted and scored
+    under its own model_name (e.g. 'xgboost_metadata'), so `slop model evaluate`/`report`
+    work unmodified against any of them afterward."""
+    settings = get_settings()
+
+    if model not in MODEL_NAMES:
+        typer.secho(f"[FAIL] --model must be one of {MODEL_NAMES}, got {model!r}", fg="red")
+        raise typer.Exit(1)
+    if not splits_csv.exists():
+        typer.secho(f"[FAIL] {splits_csv} not found - run `slop label make-splits` first", fg="red")
+        raise typer.Exit(1)
+
+    splits = load_splits(splits_csv)
+    with session_scope() as session:
+        df = assemble_dataset(session, splits)
+
+    if df.empty:
+        typer.secho("No labeled videos found in splits.csv - nothing to train on.", fg="yellow")
+        raise typer.Exit(1)
+
+    train_df = df[df["split"] == "train"]
+    if train_df.empty:
+        typer.secho("No rows in the train split - nothing to train on.", fg="red")
+        raise typer.Exit(1)
+
+    reports = {}
+    for group_name, (numeric, categorical) in FEATURE_GROUPS.items():
+        model_name = f"{model}_{group_name}"
+        typer.secho(f"Training {model_name} on {len(train_df)} row(s)...", bold=True)
+
+        run = start_run(settings, config={"model_name": model_name, "train_rows": len(train_df)})
+        trained = train_model(
+            model, train_df, numeric_features=numeric, categorical_features=categorical
+        )
+        model_path = save_model(trained, artifacts_dir, train_row_count=len(train_df))
+        typer.echo(f"  saved to {model_path}")
+
+        scores = score_dataframe(trained, df)
+        with session_scope() as session:
+            for idx, row in df.iterrows():
+                score = float(scores[idx])
+                predicted_label = "down" if score >= 0.5 else "up"
+                upsert_video_score(
+                    session,
+                    video_id=row["video_id"],
+                    model_name=model_name,
+                    model_version=trained.version,
+                    score=score,
+                    predicted_label=predicted_label,
+                    split=row["split"],
+                )
+        log_metrics(run, {"train_rows": len(train_df), "scored_rows": len(df)})
+        finish(run)
+
+        eval_df = df[df["split"] == split].copy()
+        eval_df["score"] = scores[eval_df.index]
+        reports[group_name] = evaluate(eval_df, train_df["y"])
+
+    table = format_ablation_table(reports)
+    typer.echo("\n" + table.to_string(index=False))
 
 
 if __name__ == "__main__":

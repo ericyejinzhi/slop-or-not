@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
@@ -110,3 +111,52 @@ class VideoScore(Base, TimestampMixin):
     score: Mapped[float] = mapped_column(Float)
     predicted_label: Mapped[str] = mapped_column(Text)
     split: Mapped[str] = mapped_column(Text)
+
+
+class VideoNlpFeatures(Base, TimestampMixin):
+    """NLP feature aggregates + embeddings for one video. Keyed on video_id alone and
+    upserted (like VideoScore's reasoning, unlike Label's) - these are reproducible
+    function outputs of a specific model checkpoint, not human judgments. Checkpoint
+    names are plain provenance columns, not part of the key: there's no product need to
+    compare sentiment/embeddings across checkpoint versions side by side the way
+    VideoScore compares model predictions, so re-running with a new checkpoint just
+    overwrites.
+    """
+
+    __tablename__ = "video_nlp_features"
+
+    video_id: Mapped[str] = mapped_column(Text, ForeignKey("videos.id"), primary_key=True)
+    comment_count_scored: Mapped[int] = mapped_column(Integer)
+    sentiment_mean: Mapped[float | None] = mapped_column(Float)
+    sentiment_std: Mapped[float | None] = mapped_column(Float)
+    sentiment_negative_share: Mapped[float | None] = mapped_column(Float)
+    slop_keyword_rate: Mapped[float | None] = mapped_column(Float)
+    topic_cluster_count: Mapped[int | None] = mapped_column(Integer)
+    topic_top_cluster_share: Mapped[float | None] = mapped_column(Float)
+    topic_top_cluster_sentiment: Mapped[float | None] = mapped_column(Float)
+    topic_sentiment_spread: Mapped[float | None] = mapped_column(Float)
+    title_lure_score: Mapped[float | None] = mapped_column(Float)
+    title_mysterious_score: Mapped[float | None] = mapped_column(Float)
+    title_transparent_score: Mapped[float | None] = mapped_column(Float)
+    title_embedding: Mapped[list[float] | None] = mapped_column(Vector(384))
+    description_embedding: Mapped[list[float] | None] = mapped_column(Vector(384))
+    comment_embedding_mean: Mapped[list[float] | None] = mapped_column(Vector(384))
+    sentiment_model: Mapped[str] = mapped_column(Text)
+    embedding_model: Mapped[str] = mapped_column(Text)
+
+
+class VideoVisionFeatures(Base, TimestampMixin):
+    """CLIP thumbnail embedding + zero-shot scores for one video. Same keying rationale
+    as VideoNlpFeatures - upserted on video_id alone, checkpoint name as a plain
+    provenance column. FK to videos.id (not thumbnails.video_id) decouples vision-feature
+    recompute from any particular thumbnail row's lifecycle.
+    """
+
+    __tablename__ = "video_vision_features"
+
+    video_id: Mapped[str] = mapped_column(Text, ForeignKey("videos.id"), primary_key=True)
+    image_embedding: Mapped[list[float] | None] = mapped_column(Vector(512))
+    clip_clickbait_score: Mapped[float | None] = mapped_column(Float)
+    clip_ai_generated_score: Mapped[float | None] = mapped_column(Float)
+    clip_text_heavy_score: Mapped[float | None] = mapped_column(Float)
+    clip_model: Mapped[str] = mapped_column(Text)

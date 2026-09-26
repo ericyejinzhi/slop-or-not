@@ -74,6 +74,10 @@ def test_extract_features_produces_expected_record():
     assert features.duration_deviation_genre is not None
     assert features.channel_upload_cadence_days == 5.0  # every 5 days in this fake corpus
     assert features.genre == "Gaming"
+    assert features.title_curiosity_gap_count == 0
+    assert features.title_unresolved_pronoun_count == 1  # "this"
+    assert features.title_all_caps_span_count == 4  # YOU, WON, BELIEVE, THIS
+    assert features.title_ellipsis_count == 0
 
 
 def test_extract_features_handles_missing_view_count_and_duration():

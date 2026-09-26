@@ -10,6 +10,8 @@ def test_all_tables_registered():
         "thumbnails",
         "labels",
         "video_scores",
+        "video_nlp_features",
+        "video_vision_features",
     }
 
 
@@ -25,4 +27,6 @@ def test_foreign_keys_point_at_expected_tables():
         ("thumbnails", "videos"),
         ("labels", "videos"),
         ("video_scores", "videos"),
+        ("video_nlp_features", "videos"),
+        ("video_vision_features", "videos"),
     }

@@ -13,6 +13,12 @@ from sloppy.features.text import (
     emoji_count,
     tag_count,
 )
+from sloppy.features.title_structure import (
+    all_caps_span_count,
+    curiosity_gap_phrase_count,
+    ellipsis_count,
+    unresolved_pronoun_count,
+)
 
 
 class ExtractableVideo(VideoLike, Protocol):
@@ -41,6 +47,10 @@ class VideoFeatures:
     duration_deviation_genre: float | None
     channel_upload_cadence_days: float | None
     genre: str
+    title_curiosity_gap_count: int
+    title_unresolved_pronoun_count: int
+    title_all_caps_span_count: int
+    title_ellipsis_count: int
 
 
 def like_view_ratio(like_count: int | None, view_count: int | None) -> float | None:
@@ -77,4 +87,8 @@ def extract_features(video: ExtractableVideo, corpus: CorpusStats) -> VideoFeatu
         duration_deviation_genre=duration_deviation(video.duration_seconds, genre_peers),
         channel_upload_cadence_days=cadence,
         genre=genre,
+        title_curiosity_gap_count=curiosity_gap_phrase_count(video.title),
+        title_unresolved_pronoun_count=unresolved_pronoun_count(video.title),
+        title_all_caps_span_count=all_caps_span_count(video.title),
+        title_ellipsis_count=ellipsis_count(video.title),
     )
