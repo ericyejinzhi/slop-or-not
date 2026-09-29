@@ -13,6 +13,7 @@ from sloppy.features.similarity import (
     channel_thumbnail_self_similarity_mean,
     channel_title_self_similarity_mean,
     near_duplicate_thumbnail_count,
+    nearest_videos_by_thumbnail,
 )
 from sloppy.features.vision_store import upsert_video_vision_features
 from sloppy.ingest.upsert import upsert_channel, upsert_video
@@ -142,6 +143,92 @@ def test_similarity_functions_against_known_vectors():
             )
             assert title_similarity is not None
             assert abs(title_similarity - 0.5) < 1e-6
+    finally:
+        _cleanup()
+
+
+def test_nearest_videos_by_thumbnail_orders_nearest_first_and_respects_k():
+    _cleanup()
+    try:
+        with session_scope() as session:
+            upsert_channel(
+                session,
+                ChannelMeta(id=TEST_CHANNEL_ID, title="Test Channel", uploads_playlist_id="UU_x"),
+            )
+            for video_id in VIDEO_IDS:
+                upsert_video(
+                    session,
+                    VideoMeta(
+                        id=video_id,
+                        channel_id=TEST_CHANNEL_ID,
+                        title="Test Video",
+                        published_at=datetime.now(UTC),
+                    ),
+                )
+
+        # v1 and v2 are identical (distance 0); v3 is orthogonal to both (distance 1).
+        with session_scope() as session:
+            upsert_video_vision_features(
+                session,
+                video_id=VIDEO_IDS[0],
+                image_embedding=_unit_vector(512, 0),
+                clip_clickbait_score=0.0,
+                clip_ai_generated_score=0.0,
+                clip_text_heavy_score=0.0,
+                clip_model="test",
+            )
+            upsert_video_vision_features(
+                session,
+                video_id=VIDEO_IDS[1],
+                image_embedding=_unit_vector(512, 0),
+                clip_clickbait_score=0.0,
+                clip_ai_generated_score=0.0,
+                clip_text_heavy_score=0.0,
+                clip_model="test",
+            )
+            upsert_video_vision_features(
+                session,
+                video_id=VIDEO_IDS[2],
+                image_embedding=_unit_vector(512, 1),
+                clip_clickbait_score=0.0,
+                clip_ai_generated_score=0.0,
+                clip_text_heavy_score=0.0,
+                clip_model="test",
+            )
+
+        with session_scope() as session:
+            neighbors = nearest_videos_by_thumbnail(session, VIDEO_IDS[0], k=10)
+            assert [video_id for video_id, _ in neighbors] == [VIDEO_IDS[1], VIDEO_IDS[2]]
+            assert abs(neighbors[0][1] - 0.0) < 1e-6
+            assert abs(neighbors[1][1] - 1.0) < 1e-6
+
+            truncated = nearest_videos_by_thumbnail(session, VIDEO_IDS[0], k=1)
+            assert [video_id for video_id, _ in truncated] == [VIDEO_IDS[1]]
+    finally:
+        _cleanup()
+
+
+def test_nearest_videos_by_thumbnail_empty_without_embedding():
+    _cleanup()
+    try:
+        with session_scope() as session:
+            upsert_channel(
+                session,
+                ChannelMeta(id=TEST_CHANNEL_ID, title="Test Channel", uploads_playlist_id="UU_x"),
+            )
+            upsert_video(
+                session,
+                VideoMeta(
+                    id=VIDEO_IDS[0],
+                    channel_id=TEST_CHANNEL_ID,
+                    title="Test Video",
+                    published_at=datetime.now(UTC),
+                ),
+            )
+
+        with session_scope() as session:
+            result = nearest_videos_by_thumbnail(session, VIDEO_IDS[0])
+        assert result == []
     finally:
         _cleanup()
 

@@ -56,6 +56,27 @@ def near_duplicate_thumbnail_count(session: Session, video_id: str) -> int | Non
     return int(result)
 
 
+def nearest_videos_by_thumbnail(
+    session: Session, video_id: str, k: int = 10
+) -> list[tuple[str, float]]:
+    """Corpus-wide (not channel-scoped, matching near_duplicate_thumbnail_count's scope
+    rather than the channel-scoped mean functions above) nearest neighbors by thumbnail
+    embedding cosine distance, nearest first. [] if this video has no embedding - used by
+    GET /videos/{id}'s "similar videos" list (Phase 5)."""
+    result = session.execute(
+        text("""
+            SELECT other.video_id, other.image_embedding <=> mine.image_embedding AS distance
+            FROM video_vision_features other
+            JOIN video_vision_features mine ON mine.video_id = :video_id
+            WHERE other.video_id != :video_id
+            ORDER BY distance ASC
+            LIMIT :k
+        """),
+        {"video_id": video_id, "k": k},
+    )
+    return [(row.video_id, float(row.distance)) for row in result]
+
+
 def channel_title_self_similarity_mean(
     session: Session, video_id: str, channel_id: str
 ) -> float | None:

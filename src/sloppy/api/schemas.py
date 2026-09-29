@@ -1,0 +1,119 @@
+"""Pydantic request/response schemas for the API. Schemas that map directly onto a
+single ORM model's scalar columns use from_attributes=True + model_validate(); schemas
+blending multiple tables (list/detail items) are built field-by-field in router code
+instead, since no single ORM object represents them.
+"""
+
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, model_validator
+
+
+class NlpFeatureBreakdown(BaseModel):
+    """Scalar (non-vector) columns of VideoNlpFeatures - the 3 embedding columns are
+    excluded, not meaningfully serializable in a UI response."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    comment_count_scored: int
+    sentiment_mean: float | None
+    sentiment_std: float | None
+    sentiment_negative_share: float | None
+    slop_keyword_rate: float | None
+    topic_cluster_count: int | None
+    topic_top_cluster_share: float | None
+    topic_top_cluster_sentiment: float | None
+    topic_sentiment_spread: float | None
+    title_lure_score: float | None
+    title_mysterious_score: float | None
+    title_transparent_score: float | None
+
+
+class VisionFeatureBreakdown(BaseModel):
+    """Scalar columns of VideoVisionFeatures - excludes image_embedding."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    clip_clickbait_score: float | None
+    clip_ai_generated_score: float | None
+    clip_text_heavy_score: float | None
+
+
+class SimilarVideo(BaseModel):
+    video_id: str
+    distance: float
+    title: str | None
+    thumbnail_url: str | None
+
+
+class VideoListItem(BaseModel):
+    id: str
+    title: str
+    channel_id: str
+    channel_handle: str | None
+    published_at: datetime
+    view_count: int | None
+    thumbnail_url: str | None
+    score: float | None
+    predicted_label: str | None
+
+
+class VideoListResponse(BaseModel):
+    items: list[VideoListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class VideoDetail(BaseModel):
+    id: str
+    title: str
+    description: str | None
+    channel_id: str
+    channel_handle: str | None
+    published_at: datetime
+    duration_seconds: int | None
+    view_count: int | None
+    like_count: int | None
+    comment_count: int | None
+    tags: list[str]
+    thumbnail_url: str | None
+    score: float | None
+    predicted_label: str | None
+    model_name: str | None
+    model_version: str | None
+    nlp_features: NlpFeatureBreakdown | None
+    vision_features: VisionFeatureBreakdown | None
+    similar_videos: list[SimilarVideo]
+
+
+class IngestRequest(BaseModel):
+    channel: str | None = None
+    video_id: str | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_target(self) -> "IngestRequest":
+        if (self.channel is None) == (self.video_id is None):
+            raise ValueError("Provide exactly one of 'channel' or 'video_id'")
+        return self
+
+
+class IngestResponse(BaseModel):
+    status: Literal["accepted"]
+    target: str
+
+
+class LabelCreateRequest(BaseModel):
+    video_id: str
+    labeler: str | None = None
+    label: Literal["up", "down", "skip"]
+    notes: str | None = None
+
+
+class LabelResponse(BaseModel):
+    video_id: str
+    labeler: str
+    label: str
+    notes: str | None
+    created_at: datetime

@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     wandb_api_key: str = ""
     wandb_project: str = "slop-or-not"
 
+    # Active model (Phase 5). Blank means unset - the API then shows null scores rather
+    # than erroring. Set after promoting a trained model - see docs/writeups/TODO.md.
+    active_model_name: str = ""
+    active_model_version: str = ""
+
     @property
     def database_url(self) -> str:
         return (

@@ -84,6 +84,48 @@ def _ingest_video(
     return len(comments), thumbnail_kwargs is not None, thumbnail_error
 
 
+def ingest_video(settings: Settings, video_id: str) -> IngestSummary:
+    """Ingest a single video by id, for callers that don't want a whole-channel ingest
+    (e.g. the API's POST /ingest). If the video's channel isn't in the DB yet, resolves
+    and upserts it first, since `_ingest_video` never creates a Channel row and the FK
+    would otherwise fail for a video from a never-seen channel.
+    """
+    summary = IngestSummary()
+    youtube = get_youtube_client(settings)
+    s3_client = get_s3_client(settings)
+    ensure_bucket(s3_client, settings.s3_bucket_thumbnails)
+
+    videos = fetch_videos_metadata(youtube, [video_id])
+    if not videos:
+        raise ValueError(f"No YouTube video found for {video_id!r}")
+    video = videos[0]
+    summary.channel_id = video.channel_id
+
+    with session_scope() as session:
+        channel_exists = session.get(Channel, video.channel_id) is not None
+    if not channel_exists:
+        channel = resolve_channel(youtube, video.channel_id)
+        with session_scope() as session:
+            upsert_channel(session, channel)
+
+    try:
+        comment_count, thumbnail_upserted, thumbnail_error = _ingest_video(
+            settings, youtube, s3_client, video
+        )
+    except Exception as exc:  # noqa: BLE001 - a single video's failure must not raise past here
+        logger.warning("Failed to ingest video %s: %s", video.id, exc)
+        summary.errors.append(f"{video.id}: {exc}")
+        return summary
+
+    summary.videos_upserted += 1
+    summary.comments_upserted += comment_count
+    summary.thumbnails_upserted += int(thumbnail_upserted)
+    if thumbnail_error is not None:
+        summary.errors.append(f"{video.id}: thumbnail failed: {thumbnail_error}")
+
+    return summary
+
+
 def ingest_channel(settings: Settings, id_or_handle: str) -> IngestSummary:
     summary = IngestSummary()
     youtube = get_youtube_client(settings)

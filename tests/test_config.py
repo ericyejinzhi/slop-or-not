@@ -17,3 +17,15 @@ def test_defaults_are_local_dev():
     settings = Settings(_env_file=None)
     assert settings.postgres_host == "localhost"
     assert settings.s3_endpoint_url.startswith("http://localhost")
+
+
+def test_active_model_defaults_to_unset_and_can_be_overridden():
+    settings = Settings(_env_file=None)
+    assert settings.active_model_name == ""
+    assert settings.active_model_version == ""
+
+    overridden = Settings(
+        _env_file=None, active_model_name="xgboost", active_model_version="20260101-000000"
+    )
+    assert overridden.active_model_name == "xgboost"
+    assert overridden.active_model_version == "20260101-000000"

@@ -105,11 +105,19 @@ For each item: what to do, why it matters, and which writeup(s) tell you exactly
 - Only works against a tree-based estimator (`xgboost`), not `logistic_regression` - `shap.TreeExplainer` doesn't support the latter.
 - **Verify with:** `docs/writeups/phase-4/stage-14-shap-interaction-report.md` - explains the CSV's columns (feature names are post-one-hot-encoding, so a categorical interaction shows up as one row per category) and the caveats around multi-class interaction-value shapes.
 
+### 15. Promote a trained model to active (Phase 5)
+
+**Status: not done, but not blocking** - `.env`'s `ACTIVE_MODEL_NAME`/`ACTIVE_MODEL_VERSION` are blank, and the API works completely normally without them (returns `score: null`/`predicted_label: null` on every video, which is expected/correct until a real model exists).
+
+- Once a real model has been trained (item 7, or `slop model ablation`) and you've decided which one should be "the" model shown by default: set `ACTIVE_MODEL_NAME`/`ACTIVE_MODEL_VERSION` in `.env` to that model's exact `model_name`/`model_version` (as printed by `slop model train`/`ablation`, or queryable via `SELECT DISTINCT model_name, model_version FROM video_scores`).
+- `GET /videos` and `GET /videos/{id}` both still accept `model_name`/`model_version` query params to override this on a per-request basis (useful for comparing ablation variants without changing `.env`).
+- **Verify with:** `docs/writeups/phase-5/stage-5-videos-router.md` and `stage-8-active-model-config.md` - set the env vars, restart `uvicorn`, confirm `GET /videos` returns non-null scores for videos that have a `video_scores` row under that exact model name/version.
+
 ---
 
 ## Future - not yet built, included so this list stays complete
 
-### 14. AWS account (Phase 8 - "AWS migration + polish")
+### 16. AWS account (Phase 8 - "AWS migration + polish")
 
 **Status: not relevant yet** - Phase 8 hasn't been planned or built. Listed here only because you asked for the full external-setup picture, including things like AWS.
 
