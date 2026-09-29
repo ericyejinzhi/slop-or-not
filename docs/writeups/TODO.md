@@ -113,6 +113,15 @@ For each item: what to do, why it matters, and which writeup(s) tell you exactly
 - `GET /videos` and `GET /videos/{id}` both still accept `model_name`/`model_version` query params to override this on a per-request basis (useful for comparing ablation variants without changing `.env`).
 - **Verify with:** `docs/writeups/phase-5/stage-5-videos-router.md` and `stage-8-active-model-config.md` - set the env vars, restart `uvicorn`, confirm `GET /videos` returns non-null scores for videos that have a `video_scores` row under that exact model name/version.
 
+### 16. Node.js/npm for the React frontend (Phase 6)
+
+**Status: done on this machine** - `node` v24.13.0 and `npm` v11.17.0 confirmed installed and on `PATH` (checked directly, not assumed). Nothing to do here unless setting up a fresh machine.
+
+- On a machine without it: install Node.js (LTS or current - this project was scaffolded against Node 24) from https://nodejs.org, which bundles `npm`.
+- All frontend dependencies live in `web/package.json`/`web/package-lock.json` (a separate lockfile from the backend's `uv.lock`) - run `npm install` inside `web/` once, not at the repo root.
+- **Windows-specific, real issue found and fixed**: Vitest's default `forks` test-runner pool timed out starting worker processes on this Node/Windows combination ("Failed to start forks worker" / "Timeout waiting for worker to respond") - fixed by setting `test.pool: 'threads'` in `web/vite.config.ts`. If tests hang or fail to start on a different machine, check this first before assuming a real test failure.
+- **Verify with:** `docs/writeups/phase-6/stage-3-frontend-scaffolding.md` - `cd web && npm install && npm run build && npx vitest run && npm run lint`, all of which should pass cleanly.
+
 ---
 
 ## Future - not yet built, included so this list stays complete
