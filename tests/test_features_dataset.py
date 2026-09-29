@@ -4,7 +4,7 @@ import pandas as pd
 
 from sloppy.db.models import Channel, Label, Video, VideoNlpFeatures, VideoVisionFeatures
 from sloppy.db.session import session_scope
-from sloppy.features.dataset import assemble_dataset, load_splits
+from sloppy.features.dataset import assemble_dataset, assemble_features_for_video_ids, load_splits
 from sloppy.features.nlp_store import upsert_video_nlp_features
 from sloppy.features.vision_store import upsert_video_vision_features
 from sloppy.ingest.upsert import upsert_channel, upsert_video
@@ -189,5 +189,46 @@ def test_assemble_dataset_wires_nlp_vision_and_degrades_gracefully_without_them(
         assert pd.isna(row1["title_lure_score"])
         assert pd.isna(row1["clip_clickbait_score"])
         assert pd.isna(row1["lure_score_x_genre"])  # graceful degradation, no crash
+    finally:
+        _cleanup()
+
+
+def test_assemble_features_for_video_ids_builds_unlabeled_rows():
+    """Phase 7: scoring newly-ingested videos needs the same features assemble_dataset
+    produces, but with no splits.csv entry - no label/y/split columns should appear."""
+    _cleanup()
+    try:
+        base = datetime.now(UTC)
+        with session_scope() as session:
+            upsert_channel(
+                session,
+                ChannelMeta(id=TEST_CHANNEL_ID, title="Test Channel", uploads_playlist_id="UU_x"),
+            )
+            upsert_video(
+                session,
+                VideoMeta(
+                    id=f"{TEST_VIDEO_PREFIX}0",
+                    channel_id=TEST_CHANNEL_ID,
+                    title="Some Title",
+                    published_at=base,
+                    duration_seconds=600,
+                    view_count=1000,
+                    like_count=100,
+                    comment_count=10,
+                ),
+            )
+
+        with session_scope() as session:
+            df = assemble_features_for_video_ids(
+                session, [f"{TEST_VIDEO_PREFIX}0", "nonexistent_video_id"]
+            )
+
+        # the nonexistent id is silently skipped, same as assemble_dataset's own handling
+        assert len(df) == 1
+        assert df.iloc[0]["video_id"] == f"{TEST_VIDEO_PREFIX}0"
+        assert df.iloc[0]["channel_id"] == TEST_CHANNEL_ID
+        assert "label" not in df.columns
+        assert "y" not in df.columns
+        assert "split" not in df.columns
     finally:
         _cleanup()

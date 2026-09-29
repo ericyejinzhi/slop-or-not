@@ -57,6 +57,24 @@ services:
       timeout: 3s
       retries: 10
 
+  # Phase 7. Prefect's own orchestration API/UI - self-contained (its own SQLite store
+  # for flow-run history/deployments), not sharing the app's Postgres. Flow code itself
+  # (the sloppy package, torch, etc.) runs in a worker via `uv run prefect worker start`
+  # on the host, not in this container - this service is just the server/UI.
+  prefect-server:
+    image: prefecthq/prefect:3-python3.12
+    command: prefect server start --host 0.0.0.0
+    ports:
+      - "${PREFECT_PORT:-4200}:4200"
+    volumes:
+      - prefectdata:/root/.prefect
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
 volumes:
   pgdata:
   miniodata:
+  prefectdata:

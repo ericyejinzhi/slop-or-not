@@ -27,6 +27,7 @@ dependencies = [
     "shap>=0.52.0",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
+    "prefect>=3.8.7",
 ]
 
 [project.scripts]

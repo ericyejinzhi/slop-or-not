@@ -3,27 +3,16 @@ import itertools
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import typer
 from sqlalchemy import func
 
 from sloppy.config import get_settings
-from sloppy.db.models import Channel, Comment, Label, Thumbnail, Video, VideoScore
+from sloppy.db.models import Channel, Label, Thumbnail, Video, VideoScore
 from sloppy.db.session import session_scope
-from sloppy.features.comment_topics import cluster_comment_topics
 from sloppy.features.dataset import assemble_dataset, load_splits
-from sloppy.features.embeddings import EMBEDDING_DIM, EMBEDDING_MODEL_NAME, embed_texts
-from sloppy.features.nlp_store import upsert_video_nlp_features
-from sloppy.features.sentiment import SENTIMENT_MODEL_NAME, aggregate_sentiment, score_comments
-from sloppy.features.title_intent import score_title_intent
-from sloppy.features.vision import (
-    CLIP_MODEL_NAME,
-    embed_image,
-    load_thumbnail_image,
-    zero_shot_scores,
-)
-from sloppy.features.vision_store import upsert_video_vision_features
+from sloppy.features.pipeline import compute_nlp_features, compute_vision_features
+from sloppy.flows.refresh import refresh_all_tracked_channels_flow, refresh_channel_flow
 from sloppy.ingest.pipeline import ingest_channel
 from sloppy.ingest.thumbnails import (
     download_thumbnail_bytes,
@@ -61,10 +50,12 @@ ingest_app = typer.Typer(no_args_is_help=True, help="YouTube ingestion commands 
 label_app = typer.Typer(no_args_is_help=True, help="Labeling commands (Phase 2).")
 model_app = typer.Typer(no_args_is_help=True, help="Baseline model commands (Phase 3).")
 features_app = typer.Typer(no_args_is_help=True, help="NLP/vision feature commands (Phase 4).")
+orchestrate_app = typer.Typer(no_args_is_help=True, help="Prefect flow triggers (Phase 7).")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(label_app, name="label")
 app.add_typer(model_app, name="model")
 app.add_typer(features_app, name="features")
+app.add_typer(orchestrate_app, name="orchestrate")
 
 DEFAULT_SEED_CSV = Path("data/seed_channels.csv")
 DEFAULT_SPLITS_CSV = Path("data/splits.csv")
@@ -781,115 +772,52 @@ def report_command(
 @features_app.command("compute-nlp")
 def compute_nlp(
     video_id: str | None = typer.Option(None, help="Only process this one video"),
+    channel_id: str | None = typer.Option(None, help="Only process this one channel"),
     limit: int | None = typer.Option(None, help="Only process the first N videos"),
+    only_missing: bool = typer.Option(
+        False, "--only-missing", help="Skip videos that already have NLP features"
+    ),
 ) -> None:
     """Compute + persist sentiment, comment-topic, and title-intent NLP features
     (including embeddings) for ingested videos. Idempotent - re-running overwrites."""
-    with session_scope() as session:
-        query = session.query(Video)
-        if video_id:
-            query = query.filter(Video.id == video_id)
-        if limit:
-            query = query.limit(limit)
-        videos = query.all()
+    processed = compute_nlp_features(
+        video_id=video_id, limit=limit, channel_id=channel_id, only_missing=only_missing
+    )
 
-    if not videos:
+    if not processed:
         typer.secho("No matching videos found.", fg="yellow")
         raise typer.Exit(1)
 
-    processed = 0
-    for video in videos:
-        with session_scope() as session:
-            comments = session.query(Comment).filter(Comment.video_id == video.id).all()
-        texts = [c.text for c in comments]
+    for vid, comment_count in processed:
+        typer.echo(f"  {vid}: {comment_count} comment(s) scored")
 
-        sentiment_scores = score_comments(texts)
-        sentiment_agg = aggregate_sentiment(texts, sentiment_scores)
-
-        comment_embeddings = embed_texts(texts) if texts else np.empty((0, EMBEDDING_DIM))
-        comment_embedding_mean = comment_embeddings.mean(axis=0).tolist() if texts else None
-        topic_agg = cluster_comment_topics(comment_embeddings, sentiment_scores)
-
-        intent = score_title_intent(video.title)
-        title_embedding = embed_texts([video.title])[0].tolist()
-        description_embedding = (
-            embed_texts([video.description])[0].tolist() if video.description else None
-        )
-
-        with session_scope() as session:
-            upsert_video_nlp_features(
-                session,
-                video_id=video.id,
-                comment_count_scored=sentiment_agg.comment_count_scored,
-                sentiment_mean=sentiment_agg.sentiment_mean,
-                sentiment_std=sentiment_agg.sentiment_std,
-                sentiment_negative_share=sentiment_agg.sentiment_negative_share,
-                slop_keyword_rate=sentiment_agg.slop_keyword_rate,
-                topic_cluster_count=topic_agg.topic_cluster_count,
-                topic_top_cluster_share=topic_agg.topic_top_cluster_share,
-                topic_top_cluster_sentiment=topic_agg.topic_top_cluster_sentiment,
-                topic_sentiment_spread=topic_agg.topic_sentiment_spread,
-                title_lure_score=intent.lure_score,
-                title_mysterious_score=intent.mysterious_score,
-                title_transparent_score=intent.transparent_score,
-                title_embedding=title_embedding,
-                description_embedding=description_embedding,
-                comment_embedding_mean=comment_embedding_mean,
-                sentiment_model=SENTIMENT_MODEL_NAME,
-                embedding_model=EMBEDDING_MODEL_NAME,
-            )
-        processed += 1
-        typer.echo(f"  {video.id}: {len(texts)} comment(s) scored")
-
-    typer.secho(f"Computed NLP features for {processed} video(s).", bold=True)
+    typer.secho(f"Computed NLP features for {len(processed)} video(s).", bold=True)
 
 
 @features_app.command("compute-vision")
 def compute_vision(
     video_id: str | None = typer.Option(None, help="Only process this one video"),
+    channel_id: str | None = typer.Option(None, help="Only process this one channel"),
     limit: int | None = typer.Option(None, help="Only process the first N videos"),
+    only_missing: bool = typer.Option(
+        False, "--only-missing", help="Skip videos that already have vision features"
+    ),
 ) -> None:
     """Compute + persist CLIP thumbnail embeddings + zero-shot scores for ingested
     videos that have a thumbnail on record. Idempotent - re-running overwrites."""
     settings = get_settings()
-    s3_client = get_s3_client(settings)
+    processed = compute_vision_features(
+        settings, video_id=video_id, limit=limit, channel_id=channel_id, only_missing=only_missing
+    )
 
-    with session_scope() as session:
-        query = session.query(Video, Thumbnail).join(Thumbnail, Thumbnail.video_id == Video.id)
-        if video_id:
-            query = query.filter(Video.id == video_id)
-        if limit:
-            query = query.limit(limit)
-        rows = query.all()
-
-    if not rows:
+    if not processed:
         typer.secho("No videos with a thumbnail on record found.", fg="yellow")
         raise typer.Exit(1)
 
-    processed = 0
-    for video, thumbnail in rows:
-        try:
-            image = load_thumbnail_image(s3_client, thumbnail.s3_bucket, thumbnail.s3_key)
-            image_vec = embed_image(image)
-            scores = zero_shot_scores(image)
-        except Exception as exc:  # noqa: BLE001 - one bad thumbnail must not abort the run
-            typer.secho(f"[warn] {video.id}: {exc}", fg="yellow")
-            continue
+    for vid in processed:
+        typer.echo(f"  {vid}: embedded + scored")
 
-        with session_scope() as session:
-            upsert_video_vision_features(
-                session,
-                video_id=video.id,
-                image_embedding=image_vec.tolist(),
-                clip_clickbait_score=scores["clip_clickbait_score"],
-                clip_ai_generated_score=scores["clip_ai_generated_score"],
-                clip_text_heavy_score=scores["clip_text_heavy_score"],
-                clip_model=CLIP_MODEL_NAME,
-            )
-        processed += 1
-        typer.echo(f"  {video.id}: embedded + scored")
-
-    typer.secho(f"Computed vision features for {processed} video(s).", bold=True)
+    typer.secho(f"Computed vision features for {len(processed)} video(s).", bold=True)
 
 
 @model_app.command("ablation")
@@ -960,6 +888,47 @@ def ablation_command(
 
     table = format_ablation_table(reports)
     typer.echo("\n" + table.to_string(index=False))
+
+
+@orchestrate_app.command("refresh-channel")
+def refresh_channel_command(id_or_handle: str) -> None:
+    """Run the ingest -> features -> score flow for one channel, in-process (no Prefect
+    server/worker needed - useful for manual testing; a deployment schedules this for
+    real, unattended, daily runs)."""
+    result = refresh_channel_flow(id_or_handle)
+    typer.secho(f"channel_id={result['channel_id']}", bold=True)
+    typer.echo(f"  nlp_processed={result['nlp_processed']}")
+    typer.echo(f"  vision_processed={result['vision_processed']}")
+    typer.echo(f"  scored={result['scored']}")
+
+
+@orchestrate_app.command("refresh-all")
+def refresh_all_command(
+    seed_channels_csv: Path = typer.Option(DEFAULT_SEED_CSV),  # noqa: B008
+) -> None:
+    """Run the ingest -> features -> score flow for every channel in
+    data/seed_channels.csv, in-process, one after another."""
+    results = refresh_all_tracked_channels_flow(seed_channels_csv=seed_channels_csv)
+    if not results:
+        typer.secho(f"No tracked channels found in {seed_channels_csv}.", fg="yellow")
+        raise typer.Exit(1)
+    for result in results:
+        typer.echo(
+            f"  {result['channel_id']}: nlp={result['nlp_processed']} "
+            f"vision={result['vision_processed']} scored={result['scored']}"
+        )
+    typer.secho(f"Refreshed {len(results)} channel(s).", bold=True)
+
+
+@orchestrate_app.command("serve")
+def serve_command(
+    cron: str = typer.Option("0 6 * * *", help="Cron expression for the daily refresh"),
+) -> None:
+    """Block and serve refresh-all-tracked-channels on a cron schedule - leave this
+    running (its own terminal, or a background process) for real, unattended, scheduled
+    refreshes. Set PREFECT_API_URL to the docker-compose server first, or the schedule
+    and flow-run history land in a throwaway ephemeral server instead."""
+    refresh_all_tracked_channels_flow.serve(name="daily-tracked-channels-refresh", cron=cron)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,14 @@
-"""Assembles a training-ready DataFrame: splits.csv + all ingested videos (for corpus
-norms) + per-video metadata/NLP/vision/similarity/interaction features, one row per
-labeled video. Missing NLP/vision rows (a video not yet processed by `slop features
+"""Assembles feature DataFrames from ingested videos + corpus norms.
+
+`assemble_dataset` builds a training-ready DataFrame (splits.csv + per-video features,
+one row per labeled video). `assemble_features_for_video_ids` (Phase 7) builds the same
+per-video features for arbitrary, unlabeled video ids - used to score newly-ingested
+videos with an already-trained model, where there's no product need for a video to be
+labeled first. Both share `_build_video_record`/`_corpus_context` so the actual feature
+assembly logic (metadata + NLP/vision joins + similarity + interactions) lives in one
+place.
+
+Missing NLP/vision rows (a video not yet processed by `slop features
 compute-nlp`/`compute-vision`) degrade gracefully to None - SimpleImputer/OneHotEncoder
 already handle that downstream without new preprocessing code.
 """
@@ -14,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from sloppy.db.models import Video, VideoNlpFeatures, VideoVisionFeatures
-from sloppy.features.corpus import build_corpus_stats
+from sloppy.features.corpus import CorpusStats, build_corpus_stats
 from sloppy.features.extract import extract_features
 from sloppy.features.interactions import (
     duration_deviation_x_cadence,
@@ -55,10 +63,20 @@ def load_splits(csv_path: Path) -> dict[str, tuple[str, str, str]]:
     return {row["video_id"]: (row["channel_id"], row["label"], row["split"]) for row in rows}
 
 
-def assemble_dataset(session: Session, splits: dict[str, tuple[str, str, str]]) -> pd.DataFrame:
-    """One row per video_id in `splits`. Corpus stats and the channel sentiment rollup
-    are built from ALL ingested/processed videos, not just the labeled subset - those
-    norms should reflect the real corpus, not be skewed by which videos got labeled.
+_CorpusContext = tuple[
+    dict[str, Video],
+    CorpusStats,
+    dict[str, VideoNlpFeatures],
+    dict[str, VideoVisionFeatures],
+    dict[str, float],
+]
+
+
+def _corpus_context(session: Session) -> _CorpusContext:
+    """Shared setup for both assembly functions below: corpus stats and the channel
+    sentiment rollup are built from ALL ingested/processed videos, not just whichever
+    subset is being assembled - those norms should reflect the real corpus, not be
+    skewed by which videos happen to be labeled or newly-ingested.
     """
     all_videos = list(session.execute(select(Video)).scalars())
     corpus = build_corpus_stats(all_videos)
@@ -77,46 +95,98 @@ def assemble_dataset(session: Session, splits: dict[str, tuple[str, str, str]]) 
     }
     channel_sentiment = channel_sentiment_rollup(video_sentiment_means, channel_by_video_all)
 
+    return videos_by_id, corpus, nlp_by_video, vision_by_video, channel_sentiment
+
+
+def _build_video_record(
+    session: Session,
+    video: Video,
+    corpus: CorpusStats,
+    nlp_by_video: dict[str, VideoNlpFeatures],
+    vision_by_video: dict[str, VideoVisionFeatures],
+    channel_sentiment: dict[str, float],
+) -> dict:
+    """Metadata + NLP/vision joins + similarity + interactions for one video -
+    everything assemble_dataset/assemble_features_for_video_ids have in common. Neither
+    a label nor a split is set here; callers add those (or don't) on top.
+    """
+    video_id = video.id
+    channel_id = video.channel_id
+
+    features = extract_features(video, corpus)
+    record = asdict(features)
+
+    nlp = nlp_by_video.get(video_id)
+    for col in _NLP_SCALAR_COLUMNS:
+        record[col] = getattr(nlp, col) if nlp is not None else None
+
+    vision = vision_by_video.get(video_id)
+    for col in _VISION_SCALAR_COLUMNS:
+        record[col] = getattr(vision, col) if vision is not None else None
+
+    record["channel_sentiment_mean"] = channel_sentiment.get(channel_id)
+    record["channel_thumbnail_self_similarity"] = channel_thumbnail_self_similarity_mean(
+        session, video_id, channel_id
+    )
+    record["near_duplicate_thumbnail_count"] = near_duplicate_thumbnail_count(session, video_id)
+    record["channel_title_self_similarity"] = channel_title_self_similarity_mean(
+        session, video_id, channel_id
+    )
+
+    record["lure_score_x_genre"] = lure_score_x_genre(record["title_lure_score"], record["genre"])
+    record["duration_deviation_x_cadence"] = duration_deviation_x_cadence(
+        record["duration_deviation_genre"], record["channel_upload_cadence_days"]
+    )
+    record["mysterious_score_x_duration_bucket"] = mysterious_score_x_duration_bucket(
+        record["title_mysterious_score"], record["duration_bucket"]
+    )
+
+    return record
+
+
+def assemble_dataset(session: Session, splits: dict[str, tuple[str, str, str]]) -> pd.DataFrame:
+    """One row per video_id in `splits`, with label/split columns attached."""
+    videos_by_id, corpus, nlp_by_video, vision_by_video, channel_sentiment = _corpus_context(
+        session
+    )
+
     records = []
-    for video_id, (channel_id, label, split) in splits.items():
+    for video_id, (_channel_id, label, split) in splits.items():
         video = videos_by_id.get(video_id)
         if video is None:
             continue
 
-        features = extract_features(video, corpus)
-        record = asdict(features)
-        record["channel_id"] = channel_id
+        record = _build_video_record(
+            session, video, corpus, nlp_by_video, vision_by_video, channel_sentiment
+        )
         record["label"] = label
         record["y"] = 1 if label == "down" else 0
         record["split"] = split
+        records.append(record)
 
-        nlp = nlp_by_video.get(video_id)
-        for col in _NLP_SCALAR_COLUMNS:
-            record[col] = getattr(nlp, col) if nlp is not None else None
+    return pd.DataFrame.from_records(records)
 
-        vision = vision_by_video.get(video_id)
-        for col in _VISION_SCALAR_COLUMNS:
-            record[col] = getattr(vision, col) if vision is not None else None
 
-        record["channel_sentiment_mean"] = channel_sentiment.get(channel_id)
-        record["channel_thumbnail_self_similarity"] = channel_thumbnail_self_similarity_mean(
-            session, video_id, channel_id
-        )
-        record["near_duplicate_thumbnail_count"] = near_duplicate_thumbnail_count(session, video_id)
-        record["channel_title_self_similarity"] = channel_title_self_similarity_mean(
-            session, video_id, channel_id
-        )
+def assemble_features_for_video_ids(session: Session, video_ids: list[str]) -> pd.DataFrame:
+    """One row per video_id, same features as assemble_dataset but with no label/split -
+    for scoring already-ingested, unlabeled videos with an already-trained model (Phase
+    7's orchestrated refresh), where there's no product need to label a video before
+    scoring it. A video_id with no matching Video row is silently skipped, same as
+    assemble_dataset's own handling of a video_id absent from the videos table.
+    """
+    videos_by_id, corpus, nlp_by_video, vision_by_video, channel_sentiment = _corpus_context(
+        session
+    )
 
-        record["lure_score_x_genre"] = lure_score_x_genre(
-            record["title_lure_score"], record["genre"]
-        )
-        record["duration_deviation_x_cadence"] = duration_deviation_x_cadence(
-            record["duration_deviation_genre"], record["channel_upload_cadence_days"]
-        )
-        record["mysterious_score_x_duration_bucket"] = mysterious_score_x_duration_bucket(
-            record["title_mysterious_score"], record["duration_bucket"]
-        )
+    records = []
+    for video_id in video_ids:
+        video = videos_by_id.get(video_id)
+        if video is None:
+            continue
 
+        record = _build_video_record(
+            session, video, corpus, nlp_by_video, vision_by_video, channel_sentiment
+        )
         records.append(record)
 
     return pd.DataFrame.from_records(records)

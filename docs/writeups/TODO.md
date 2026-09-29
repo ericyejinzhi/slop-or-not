@@ -122,11 +122,20 @@ For each item: what to do, why it matters, and which writeup(s) tell you exactly
 - **Windows-specific, real issue found and fixed**: Vitest's default `forks` test-runner pool timed out starting worker processes on this Node/Windows combination ("Failed to start forks worker" / "Timeout waiting for worker to respond") - fixed by setting `test.pool: 'threads'` in `web/vite.config.ts`. If tests hang or fail to start on a different machine, check this first before assuming a real test failure.
 - **Verify with:** `docs/writeups/phase-6/stage-3-frontend-scaffolding.md` - `cd web && npm install && npm run build && npx vitest run && npm run lint`, all of which should pass cleanly.
 
+### 17. Prefect server + scheduled `serve` process (Phase 7)
+
+**Status: server confirmed running via docker-compose; the scheduled refresh needs a `slop orchestrate serve` process left running whenever you want it to actually fire.**
+
+- `docker compose up -d prefect-server` brings up Prefect's own orchestration API + UI at http://localhost:4200 (self-contained - its own SQLite store for flow-run history/deployments, not sharing the app's Postgres). Confirmed healthy and reachable in Stage 1 (`curl http://localhost:4200/api/health` -> `true`).
+- The server container does NOT run your flow code - it's just the API/UI. Actually executing flows (ingest/features/scoring, which need the full `sloppy` package + torch/transformers) happens via **`uv run slop orchestrate serve`, run on the host and left running** (its own terminal, or a background service) - unlike a typical Prefect work-pool setup, this project uses `flow.serve()` (Stage 6), which needs no separate work pool or worker process; the `serve` command itself both registers the daily cron schedule and executes runs against it. Without that process running, the schedule still exists in the server (confirmed via `docker compose up -d prefect-server` alone), but every scheduled or manually-triggered run just sits in a "Scheduled"/"Late" state and never executes.
+- Every `uv run prefect ...`/`uv run slop orchestrate ...` command needs `PREFECT_API_URL` set in that shell first, or it talks to a throwaway ephemeral server instead of the docker-compose one - easy to forget and confusing when flow runs "disappear." (`uv run prefect config set PREFECT_API_URL=...`, done once in Stage 1, persists this across shells too.)
+- **Verify with:** `docs/writeups/phase-7/stage-1-prefect-server.md` for the server; `stage-6-scheduled-deployment.md` for the real registered deployment/schedule; later Phase 7 stage docs for how a flow run's actual execution (and a forced retry) were confirmed, both in the terminal and in the UI at http://localhost:4200.
+
 ---
 
 ## Future - not yet built, included so this list stays complete
 
-### 16. AWS account (Phase 8 - "AWS migration + polish")
+### 18. AWS account (Phase 8 - "AWS migration + polish")
 
 **Status: not relevant yet** - Phase 8 hasn't been planned or built. Listed here only because you asked for the full external-setup picture, including things like AWS.
 
