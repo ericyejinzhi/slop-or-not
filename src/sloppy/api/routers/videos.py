@@ -13,6 +13,7 @@ from sloppy.api.schemas import (
     VideoListResponse,
     VisionFeatureBreakdown,
 )
+from sloppy.api.thumbnails import presigned_thumbnail_url
 from sloppy.config import Settings, get_settings
 from sloppy.db.models import (
     Channel,
@@ -23,7 +24,6 @@ from sloppy.db.models import (
     VideoVisionFeatures,
 )
 from sloppy.features.similarity import nearest_videos_by_thumbnail
-from sloppy.storage import generate_presigned_url
 
 videos_router = APIRouter(prefix="/videos", tags=["videos"])
 
@@ -45,12 +45,6 @@ def _resolve_model(
     if not name or not version:
         return None, None
     return name, version
-
-
-def _presigned_thumbnail_url(s3_client, thumbnail: Thumbnail | None) -> str | None:
-    if thumbnail is None:
-        return None
-    return generate_presigned_url(s3_client, thumbnail.s3_bucket, thumbnail.s3_key)
 
 
 @videos_router.get("", response_model=VideoListResponse)
@@ -119,7 +113,7 @@ def list_videos(
             channel_handle=channel_handle,
             published_at=video.published_at,
             view_count=video.view_count,
-            thumbnail_url=_presigned_thumbnail_url(s3_client, thumbnails.get(video.id)),
+            thumbnail_url=presigned_thumbnail_url(s3_client, thumbnails.get(video.id)),
             score=score,
             predicted_label=predicted_label_value,
         )
@@ -176,7 +170,7 @@ def get_video_detail(
                     video_id=neighbor_id,
                     distance=distance,
                     title=neighbor_video.title,
-                    thumbnail_url=_presigned_thumbnail_url(
+                    thumbnail_url=presigned_thumbnail_url(
                         s3_client, neighbor_thumbnails.get(neighbor_id)
                     ),
                 )
@@ -194,7 +188,7 @@ def get_video_detail(
         like_count=video.like_count,
         comment_count=video.comment_count,
         tags=video.tags or [],
-        thumbnail_url=_presigned_thumbnail_url(s3_client, thumbnail),
+        thumbnail_url=presigned_thumbnail_url(s3_client, thumbnail),
         score=score_row.score if score_row is not None else None,
         predicted_label=score_row.predicted_label if score_row is not None else None,
         model_name=resolved_name,

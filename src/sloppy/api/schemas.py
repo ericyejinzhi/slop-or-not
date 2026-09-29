@@ -88,6 +88,36 @@ class VideoDetail(BaseModel):
     similar_videos: list[SimilarVideo]
 
 
+class ChannelDetail(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    handle: str | None
+    title: str
+    description: str | None
+    subscriber_count: int | None
+    video_count: int | None
+    view_count: int | None
+    last_ingested_at: datetime | None
+
+
+class LabelPoolItem(BaseModel):
+    video_id: str
+    title: str
+    channel_id: str
+    channel_handle: str | None
+    published_at: datetime
+    duration_seconds: int | None
+    view_count: int | None
+    like_count: int | None
+    comment_count: int | None
+    thumbnail_url: str | None
+
+
+class LabelPoolResponse(BaseModel):
+    items: list[LabelPoolItem]
+
+
 class IngestRequest(BaseModel):
     channel: str | None = None
     video_id: str | None = None

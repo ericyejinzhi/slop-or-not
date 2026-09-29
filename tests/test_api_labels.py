@@ -1,6 +1,6 @@
 """Integration tests against the real dev Postgres (docker compose up -d)."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 
@@ -9,11 +9,15 @@ from sloppy.db.models import Channel, Label, Video
 from sloppy.db.session import session_scope
 from sloppy.ingest.upsert import upsert_channel, upsert_video
 from sloppy.ingest.youtube import ChannelMeta, VideoMeta
+from sloppy.label.labels import record_label
 
 client = TestClient(app)
 
 TEST_CHANNEL_ID = "UC_test_api_labels_channel"
 TEST_VIDEO_ID = "test_api_labels_video_0001"
+
+POOL_CHANNEL_ID = "UC_test_api_labels_pool_channel"
+POOL_VIDEO_PREFIX = "test_api_labels_pool_video_"
 
 
 def _cleanup() -> None:
@@ -122,3 +126,83 @@ def test_post_labels_422_for_invalid_label_value():
         assert response.status_code == 422
     finally:
         _cleanup()
+
+
+def _cleanup_pool() -> None:
+    with session_scope() as session:
+        video_ids = [
+            row[0] for row in session.query(Video.id).filter(Video.channel_id == POOL_CHANNEL_ID)
+        ]
+        session.query(Label).filter(Label.video_id.in_(video_ids)).delete(synchronize_session=False)
+        session.query(Video).filter(Video.channel_id == POOL_CHANNEL_ID).delete()
+        session.query(Channel).filter(Channel.id == POOL_CHANNEL_ID).delete()
+
+
+def test_get_label_pool_excludes_labeled_and_respects_per_channel_max():
+    _cleanup_pool()
+    try:
+        with session_scope() as session:
+            upsert_channel(
+                session,
+                ChannelMeta(
+                    id=POOL_CHANNEL_ID,
+                    handle="@poolchannel",
+                    title="Pool Channel",
+                    uploads_playlist_id="UU_x",
+                ),
+            )
+            now = datetime.now(UTC)
+            for i in range(5):
+                upsert_video(
+                    session,
+                    VideoMeta(
+                        id=f"{POOL_VIDEO_PREFIX}{i}",
+                        channel_id=POOL_CHANNEL_ID,
+                        title=f"Pool Video {i}",
+                        published_at=now - timedelta(days=i),
+                    ),
+                )
+        with session_scope() as session:
+            record_label(session, video_id=f"{POOL_VIDEO_PREFIX}0", labeler="t", label="up")
+
+        response = client.get("/labels/pool", params={"per_channel_max": 2, "pool_size": 100})
+        assert response.status_code == 200
+        items = response.json()["items"]
+        this_channel = [i for i in items if i["channel_id"] == POOL_CHANNEL_ID]
+        # candidate_videos ranks by recency FIRST (per_channel_max=2 keeps videos 0 and
+        # 1, the 2 most recent), THEN excludes labeled ones from that already-capped set
+        # - video 0 is labeled and drops out, leaving only video 1. Video 2 never enters
+        # consideration even though it's unlabeled, since it didn't make the rn<=2 cut.
+        assert {i["video_id"] for i in this_channel} == {f"{POOL_VIDEO_PREFIX}1"}
+        assert all(i["title"].startswith("Pool Video") for i in this_channel)
+        assert all(i["channel_handle"] == "@poolchannel" for i in this_channel)
+    finally:
+        _cleanup_pool()
+
+
+def test_get_label_pool_consistency_mode_returns_labeled_videos():
+    _cleanup_pool()
+    try:
+        with session_scope() as session:
+            upsert_channel(
+                session,
+                ChannelMeta(id=POOL_CHANNEL_ID, title="Pool Channel", uploads_playlist_id="UU_x"),
+            )
+            upsert_video(
+                session,
+                VideoMeta(
+                    id=f"{POOL_VIDEO_PREFIX}0",
+                    channel_id=POOL_CHANNEL_ID,
+                    title="Pool Video 0",
+                    published_at=datetime.now(UTC),
+                ),
+            )
+        with session_scope() as session:
+            record_label(session, video_id=f"{POOL_VIDEO_PREFIX}0", labeler="t", label="up")
+
+        response = client.get("/labels/pool", params={"mode": "consistency"})
+        assert response.status_code == 200
+        video_ids = {item["video_id"] for item in response.json()["items"]}
+        assert f"{POOL_VIDEO_PREFIX}0" in video_ids
+    finally:
+        _cleanup_pool()
