@@ -7,14 +7,18 @@ from sloppy.config import Settings
 
 
 def get_s3_client(settings: Settings):
-    return boto3.client(
-        "s3",
-        endpoint_url=settings.s3_endpoint_url,
-        aws_access_key_id=settings.s3_access_key,
-        aws_secret_access_key=settings.s3_secret_key,
-        config=Config(signature_version="s3v4"),
-        region_name="us-east-1",
-    )
+    kwargs: dict = {
+        "endpoint_url": settings.s3_endpoint_url,
+        "config": Config(signature_version="s3v4"),
+        "region_name": settings.aws_region,
+    }
+    # Only pass explicit credentials if both are set - passing None/blank ones would
+    # override boto3's default credential chain (env vars, shared config, an EC2
+    # instance's IAM role) instead of falling through to it.
+    if settings.s3_access_key and settings.s3_secret_key:
+        kwargs["aws_access_key_id"] = settings.s3_access_key
+        kwargs["aws_secret_access_key"] = settings.s3_secret_key
+    return boto3.client("s3", **kwargs)
 
 
 def ensure_bucket(client, bucket: str) -> None:

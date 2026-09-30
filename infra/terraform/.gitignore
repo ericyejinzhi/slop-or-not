@@ -1,0 +1,17 @@
+# Downloaded provider binaries - not committed, .terraform.lock.hcl (the version lock)
+# is committed so `terraform init` is reproducible.
+.terraform/
+
+# Never commit real state or plans - this reference IaC is never applied, so these
+# should never exist, but ignored defensively in case someone experiments locally.
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# Never commit a real tfvars file - real secrets (db_password) belong in
+# TF_VAR_db_password or an untracked *.auto.tfvars, never in git.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example

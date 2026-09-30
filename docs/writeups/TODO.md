@@ -131,17 +131,24 @@ For each item: what to do, why it matters, and which writeup(s) tell you exactly
 - Every `uv run prefect ...`/`uv run slop orchestrate ...` command needs `PREFECT_API_URL` set in that shell first, or it talks to a throwaway ephemeral server instead of the docker-compose one - easy to forget and confusing when flow runs "disappear." (`uv run prefect config set PREFECT_API_URL=...`, done once in Stage 1, persists this across shells too.)
 - **Verify with:** `docs/writeups/phase-7/stage-1-prefect-server.md` for the server; `stage-6-scheduled-deployment.md` for the real registered deployment/schedule; later Phase 7 stage docs for how a flow run's actual execution (and a forced retry) were confirmed, both in the terminal and in the UI at http://localhost:4200.
 
----
+### 18. Provision the real AWS deployment (Phase 8)
 
-## Future - not yet built, included so this list stays complete
+**Status: not done, but not blocking** - the app is fully built and tested locally (Docker Compose); this is the actual "go live" step, entirely manual, entirely optional until you want a public URL. Phase 8's code/config side (AWS-compatible `Settings`, a production `web`+`api` docker-compose path, and real reference Terraform) is done - see `docs/writeups/phase-8/`. **No AWS account, credentials, or billable resources exist anywhere yet** - confirmed directly before Phase 8 was built.
 
-### 18. AWS account (Phase 8 - "AWS migration + polish")
+- Create an AWS account if you don't have one, then create an IAM user (or role, if you're using AWS SSO/Identity Center) with least-privilege permissions for the resources below - never use root credentials day to day. Install the AWS CLI and run `aws configure` (or set `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_DEFAULT_REGION` env vars) so Terraform can authenticate.
+- Review and customize `infra/terraform/variables.tf` before ever applying: `thumbnails_bucket_name` (must be globally unique across all of AWS - the default is a deliberate placeholder), `db_password` (pass via `TF_VAR_db_password`, never a literal default), `ssh_ingress_cidr` (your own IP/32, never left at its non-functional placeholder default).
+- `cd infra/terraform && terraform init && terraform plan && terraform apply` - this is the one step in this entire project that costs real money and creates real, billable resources. Review the plan output carefully before typing `yes`.
+- **Manual, post-apply, SQL-level step Terraform can't do**: connect to the new RDS instance and run `CREATE EXTENSION IF NOT EXISTS vector;` - pgvector is a Postgres extension enabled per-database, not an AWS resource.
+- Update `.env` per `infra/terraform/README.md`'s mapping table (RDS endpoint, real bucket name, `AWS_REGION`, `POSTGRES_SSLMODE=require`, and leave `S3_ACCESS_KEY`/`S3_SECRET_KEY` **unset** so the EC2 instance's IAM role is used instead of long-lived keys), then SSH into the instance, install Docker, clone the repo, and run `docker compose up -d --build api web`.
+- Optional follow-ups, not required for the roadmap's "public URL serves the dashboard end-to-end" verify bullet: a real domain + TLS certificate (the EC2 instance's plain public IP over HTTP is enough for a first pass), moving the frontend to S3+CloudFront instead of the EC2-hosted nginx container (the roadmap's own "optionally" alternative).
+- **Verify with:** `docs/writeups/phase-8/` (all stages) and `infra/terraform/README.md` for the exact resource-to-`.env` mapping; once deployed, the roadmap's own verify bullet - load the public URL in a browser and confirm the dashboard works end to end, the same checks Phase 8 Stage 2 ran locally against `http://localhost:8080`.
 
-**Status: not relevant yet** - Phase 8 hasn't been planned or built. Listed here only because you asked for the full external-setup picture, including things like AWS.
+### 19. Confirm raw comment text is never exposed publicly (Phase 8 / cross-cutting)
 
-- Per `ROADMAP.md`, Phase 8 replaces MinIO with S3, local Postgres with RDS (pgvector-compatible), and runs the API/frontend on EC2 or ECS (optionally CloudFront for the frontend). It will need: an AWS account, an IAM user/role with appropriately scoped permissions (not root credentials), an S3 bucket, an RDS instance, and either an EC2 instance or an ECS cluster.
-- No writeup exists yet for this - one will be created following the same pattern (stage-by-stage docs + a phase overview) when Phase 8 is actually planned, which per the roadmap's own sequencing is after Phases 4-7 (NLP/vision features, FastAPI service, React dashboard, Prefect orchestration).
-- Nothing to do here right now - don't create AWS resources this early, since Phases 4-7 will change what actually needs to be deployed.
+**Status: already satisfied by design, documented here for the record.** `ROADMAP.md`'s cross-cutting notes say explicitly: "Don't publish raw comment text in the public demo - store it, show aggregates." Checked directly while writing Phase 8: no API schema in `src/sloppy/api/schemas.py` exposes raw `Comment.text` anywhere - only aggregate counts (`comment_count`, `comment_count_scored`) and derived scores (`sentiment_mean`, `slop_keyword_rate`, etc.) ever leave the database via the API. Comment text is read internally (for sentiment scoring and embeddings, Phase 4) and never returned to a client.
+
+- Nothing to do here - flagged so this constraint stays visible and gets re-checked if a future endpoint is ever added that touches `Comment` rows.
+- **Verify with:** `grep -n "comment" src/sloppy/api/schemas.py` - every match should be a count or a derived score, never `text`.
 
 ---
 

@@ -59,8 +59,8 @@ services:
 
   # Phase 7. Prefect's own orchestration API/UI - self-contained (its own SQLite store
   # for flow-run history/deployments), not sharing the app's Postgres. Flow code itself
-  # (the sloppy package, torch, etc.) runs in a worker via `uv run prefect worker start`
-  # on the host, not in this container - this service is just the server/UI.
+  # (the sloppy package, torch, etc.) runs via `uv run slop orchestrate serve` on the
+  # host, not in this container - this service is just the server/UI.
   prefect-server:
     image: prefecthq/prefect:3-python3.12
     command: prefect server start --host 0.0.0.0
@@ -73,6 +73,19 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  # Phase 8. Production-shaped static build + nginx, reverse-proxying /api/* to `api`
+  # exactly like the Vite dev server's own proxy (web/vite.config.ts) - the frontend code
+  # (BASE_URL = '/api' in web/src/api/client.ts) never changes between dev and this
+  # container. Not part of the day-to-day dev loop (that's still `npm run dev`) - this is
+  # a "does the production build/serve path work" smoke test, same category as `api`.
+  web:
+    build: ./web
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   pgdata:
