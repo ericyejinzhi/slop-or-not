@@ -1,6 +1,6 @@
 # External setup TODO
 
-Everything in this list is a manual, external-to-the-codebase step - an account, a credential, or human judgment work (research, labeling) that no amount of code can do for you. Phases 1-3 are fully built and tested with synthetic data, but nothing has been run against real data yet because every item in the "blocking now" section below is still outstanding (confirmed by checking `.env` and `data/` directly while writing this).
+Everything in this list is a manual, external-to-the-codebase step - an account, a credential, or human judgment work (research, labeling) that no amount of code can do for you. Every phase's code is fully built and tested with synthetic data; real data is now flowing through the pipeline - items 1, 3, and 4 are done (a real API key, 23 real ingested channels with 690 videos/51,857 comments/671 thumbnails, and a labeler name set), item 2 is partially done (23 of an eventual 40-80 channels, genre-verified via `slop label pool-preview`). Item 5 (actually labeling) is next.
 
 For each item: what to do, why it matters, and which writeup(s) tell you exactly how to confirm you did it right - most of them end with "How to verify" pointing at a real command and real expected output already documented from testing that stage.
 
@@ -10,40 +10,41 @@ For each item: what to do, why it matters, and which writeup(s) tell you exactly
 
 ### 1. Get a YouTube Data API v3 key
 
-**Status: not done** - `.env`'s `YOUTUBE_API_KEY` is blank.
+**Status: done** - a real key is set in `.env`'s `YOUTUBE_API_KEY`. Verified for real: `channels.list?forHandle=kurzgesagt` returned the real channel (25.6M subscribers, 391 videos), and `slop ingest inspect-channel @kurzgesagt` printed real recent uploads with real titles/topics.
 
-- Go to https://console.cloud.google.com/apis/credentials, create a project if you don't have one, enable "YouTube Data API v3," create an API key (free, 10,000 units/day).
-- Paste it into `.env`'s `YOUTUBE_API_KEY=`.
-- **Verify with:** `docs/writeups/phase-1/stage-2-youtube-client-metadata.md` and `stage-3-youtube-client-comments.md` - run `slop ingest inspect-channel <a real @handle>` and `slop ingest inspect-video <a real video id>`, cross-check the printed title/stats against the real YouTube page. Those two docs were written specifically because this key wasn't available yet, so they spell out exactly what to check.
+- **Verify with:** `docs/writeups/phase-1/stage-2-youtube-client-metadata.md` and `stage-3-youtube-client-comments.md` - run `slop ingest inspect-channel <a real @handle>` and `slop ingest inspect-video <a real video id>`, cross-check the printed title/stats against the real YouTube page.
+- **Noted while verifying**: `slop` CLI invocations now take noticeably longer to start (tens of seconds) than in earlier phases, even for a trivial command like `inspect-channel` - `cli.py` imports `sloppy.flows.refresh` (pulls in `prefect`) and `sloppy.features.pipeline` (pulls in `torch`/`transformers`/`sentence-transformers` transitively) at module level, so every command pays that import cost now, not just ML-heavy ones. Not a bug, just a real, growing cold-start cost worth knowing about - a future optimization would be making those imports lazy (only inside the commands that actually need them), not attempted here.
 
 ### 2. Curate `data/seed_channels.csv`
 
-**Status: not done** - the file exists with only its header row (`handle,expected_lean,genre,source_of_discovery,notes`).
+**Status: in progress** - 23 real channels across 9 genres, all handles verified against the real YouTube API (`channels.list?forHandle=...` returns exactly one result for each). 11 rows are deliberate placeholders (blank handle, `expected_lean=slop` or `ambiguous`, `source_of_discovery=needs-discovery`) marking genre/lean gaps still needing real research - `slop ingest seed-channels` silently skips blank-handle rows (confirmed in `cli.py`), so the 23 real ones are safe to bulk-ingest now without waiting on the rest.
 
-- This is real research, not automatable: pick ~40-80 channels across genres, following `ROADMAP.md`'s channel selection rules - pair quality/slop/ambiguous channels *within* each genre (so genre can't become a proxy for the label), and deliberately include the "boring mid-tier," not just obvious slop farms vs. beloved creators.
-- Read `docs/rubric.md` first (Phase 2, Stage 1) - it's the definition of "slop" you'll be implicitly applying when you set each channel's `expected_lean` column.
-- Fill in one CSV row per channel: `handle,expected_lean,genre,source_of_discovery,notes`.
-- **Verify with:** `docs/writeups/phase-2/stage-3-seed-channels.md` (run `slop label seed-status` after ingesting - see item 3 below - to confirm each channel actually landed in the DB and clears the 15-video floor) and `docs/writeups/phase-2/stage-4-pool-selection.md` (run `slop label pool-preview` to sanity-check genre/channel balance before you start labeling).
+- The 23 real channels were drafted by Claude from memory (well-known, long-running channels), not researched fresh - 2 of the first-guessed handles (`@JohnOliver`, `@tinydeskconcerts`) turned out wrong and were corrected via a real `search.list` lookup before being added (now `@lastweektonight` and `@nprmusic`). Treat every row's characterization (`expected_lean`) as a starting hypothesis for corpus balance, not a final verdict - the rubric's actual per-video judgment during labeling is what counts.
+- The 11 blank-handle rows need real research to fill in - each one's `notes` column names the genre/lean gap and a suggested search starting point. This is exactly the "real research, not automatable" work `ROADMAP.md`'s channel selection rules call for: pair quality/slop/ambiguous *within* each genre, include the "boring mid-tier," not just obvious slop farms vs. beloved creators.
+- Read `docs/rubric.md` before labeling - it's the definition of "slop" being implicitly applied in the `expected_lean` column and, later, in every actual label.
+- **Verify with:** `docs/writeups/phase-2/stage-3-seed-channels.md` (run `slop label seed-status` after ingesting - see item 3 below) and `docs/writeups/phase-2/stage-4-pool-selection.md` (run `slop label pool-preview` to sanity-check genre/channel balance before labeling).
 
 ### 3. Bulk-ingest the curated channel list
 
-**Status: blocked on items 1 and 2.**
+**Status: done for the 23 real channels currently in the CSV** - `uv run slop ingest seed-channels` (capped at the new default 30 most-recent videos/channel) ran for real: **23 channels ingested, 0 failed** - 690 videos, 51,857 comments, 671 thumbnails (19 thumbnail failures logged and skipped gracefully, mostly `@lastweektonight` hitting region/age-restricted videos - video metadata and comments for those still upserted fine). Re-run again once the 11 still-blank placeholder rows are filled in - as of the fix below, it now skips the 23 already-done channels automatically and only ingests the new rows.
 
 - Once the API key and CSV are in place: `uv run slop ingest seed-channels`.
-- **Verify with:** `docs/writeups/phase-1/phase-1-overview.md` (row-count sanity checks via `psql`) and `docs/writeups/phase-2/stage-3-seed-channels.md` (`slop label seed-status` cross-references the CSV against what actually got ingested, and flags any channel under 15 videos).
+- **Real bug found and fixed while first attempting this**: `ingest_channel` originally pulled a channel's *entire* upload history unconditionally - several of the real channels drafted for `seed_channels.csv` (PewDiePie, Markiplier, jacksepticeye) have thousands of videos, which would have meant thousands of comment-fetch + thumbnail-download calls per channel, burning far more quota and time than intended, since Phase 2's labeling pool only ever uses ~15-30 recent videos per channel anyway. Fixed: `ingest_channel`/`ingest_video` gained a `limit` parameter (most-recent-N, since the uploads playlist is confirmed most-recent-first - verified directly against the real API, not assumed), exposed as `slop ingest channel --max-videos` and `slop ingest seed-channels --max-videos-per-channel` (default `30`, matching the labeling pool's own cap). Caught before any real ingestion ran - confirmed via `docker compose exec postgres psql ... "SELECT count(*) FROM videos"` returning 0 right after stopping the first (unbounded) attempt.
+- **Second fix, found while planning the 11-row refill**: `ingest seed-channels` had no "already done" check at all - re-running the CSV after adding new rows would have re-scraped all 23 already-ingested channels too (safe, since every write is an upsert, but wasteful of quota and time). Fixed: it now skips any CSV row whose `Channel.handle` already has `last_ingested_at` set (case-insensitive match, since YouTube's `customUrl` is always returned lowercase regardless of how a handle is cased in the CSV), printing `[skip] <handle>: already ingested`. Pass `--force` to re-ingest everything anyway (e.g. to pick up new uploads on already-seen channels). Covered by `tests/test_cli_seed_channels.py`.
+- **Verify with:** `docs/writeups/phase-1/phase-1-overview.md` (row-count sanity checks via `psql`) and `docs/writeups/phase-2/stage-3-seed-channels.md` (`slop label seed-status` cross-references the CSV against what actually got ingested, and flags any channel under 15 videos). For the skip behavior specifically: `uv run pytest tests/test_cli_seed_channels.py -v`.
 
 ### 4. Set `LABELER_NAME` in `.env`
 
-**Status: not done** - blank.
+**Status: done** - set to `eric`. Confirmed loaded correctly via `get_settings().labeler_name`.
 
-- Trivial: put your name (or an initial) in `.env`'s `LABELER_NAME=`. Can also be overridden per-run with `slop label run --labeler <name>` if multiple people ever label.
+- Can be overridden per-run with `slop label run --labeler <name>` if multiple people ever label.
 - **Verify with:** `docs/writeups/phase-2/stage-2-labels-table.md` and `stage-5-labeling-cli.md` - `slop label run` refuses to start with neither set, so successfully starting a session confirms this is wired up.
 
 ### 5. Actually label videos
 
-**Status: blocked on items 1-4** - `data/splits.csv` doesn't exist yet because there are zero labels.
+**Status: ready to start** - items 1-4 are done; `slop label pool-preview` confirms 690 real candidate videos across 23 channels/9 genres (Education 93, News & Politics 52, Science & Technology 52, Howto & Style 52, Gaming 51, Music 35, Film & Animation 29, Sports 20, Entertainment 16 - the smaller genres are exactly the ones item 2's still-blank placeholder rows would help balance out). This is the next real blocker - `data/splits.csv` doesn't exist yet because there are zero labels, and labeling is real human judgment work no amount of code can substitute for.
 
-- `uv run slop label pool-preview` first (sanity-check corpus shape), then `uv run slop label run --limit 50` (repeat across multiple sessions - the roadmap targets 300-500 labeled videos total).
+- `uv run slop label run --limit 50` (repeat across multiple sessions - the roadmap targets 300-500 labeled videos total).
 - Read `docs/rubric.md` before your first session, and expect to revise it after your first ~50 labels once you've seen real edge cases (this is called out explicitly in the rubric itself).
 - **Verify with:** `docs/writeups/phase-2/stage-5-labeling-cli.md` (what a session should look like, thumbnail auto-open behavior) and `docs/writeups/phase-2/stage-7-consistency-and-stats.md` (`slop label stats` - check the minority-class share stays above the roadmap's 25% floor as you go).
 

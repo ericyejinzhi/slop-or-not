@@ -213,7 +213,15 @@ def inspect_thumbnail(video_id: str) -> None:
 
 
 @ingest_app.command("channel")
-def run_channel_ingest(id_or_handle: str) -> None:
+def run_channel_ingest(
+    id_or_handle: str,
+    max_videos: int | None = typer.Option(
+        None,
+        help="Only ingest the N most-recent videos (uploads playlist is most-recent-"
+        "first). Unset = entire channel history, which can be thousands of videos "
+        "for a large channel.",
+    ),
+) -> None:
     """Ingest a channel end-to-end: videos, comments, thumbnails. Safe to re-run (upserts)."""
     settings = get_settings()
     if not settings.youtube_api_key:
@@ -221,7 +229,7 @@ def run_channel_ingest(id_or_handle: str) -> None:
         raise typer.Exit(1)
 
     try:
-        summary = ingest_channel(settings, id_or_handle)
+        summary = ingest_channel(settings, id_or_handle, limit=max_videos)
     except ValueError as exc:
         typer.secho(f"[FAIL] {exc}", fg="red")
         raise typer.Exit(1) from exc
@@ -236,12 +244,38 @@ def run_channel_ingest(id_or_handle: str) -> None:
             typer.echo(f"  - {err}")
 
 
+def _already_ingested_handles(session) -> set[str]:
+    """Lowercased handles (as stored on `Channel.handle`, e.g. YouTube's `customUrl`,
+    which is always lowercase regardless of how the handle was originally cased) for
+    channels that have completed at least one full `ingest_channel` run - that function
+    only sets `last_ingested_at` after successfully finishing, so this is a reliable
+    "fully done before" signal, not just "exists in the DB at all".
+    """
+    rows = session.query(Channel.handle).filter(Channel.last_ingested_at.isnot(None)).all()
+    return {handle.lower() for (handle,) in rows if handle}
+
+
 @ingest_app.command("seed-channels")
 def ingest_seed_channels(
     csv_path: Path = typer.Option(DEFAULT_SEED_CSV),  # noqa: B008
     limit: int | None = typer.Option(None, help="Only process the first N rows"),
+    max_videos_per_channel: int | None = typer.Option(
+        30,
+        help="Only ingest the N most-recent videos per channel (uploads playlist is "
+        "most-recent-first). Defaults to 30, matching Phase 2's own per-channel labeling "
+        "pool cap. Pass a very large number (or edit the default in code) to fetch entire "
+        "channel histories instead.",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Re-ingest channels that have already completed a full ingest, instead of "
+        "skipping them. Off by default so re-running the CSV after adding new rows only "
+        "processes what's new.",
+    ),
 ) -> None:
-    """Bulk-ingest every channel in a seed_channels.csv (handle column). Tolerates
+    """Bulk-ingest every channel in a seed_channels.csv (handle column). Skips channels
+    that have already completed a full ingest, unless --force is passed. Tolerates
     per-channel failures - one bad row does not abort the rest."""
     settings = get_settings()
     if not settings.youtube_api_key:
@@ -255,14 +289,24 @@ def ingest_seed_channels(
         typer.secho(f"No rows found in {csv_path}", fg="yellow")
         raise typer.Exit(1)
 
+    done_handles: set[str] = set()
+    if not force:
+        with session_scope() as session:
+            done_handles = _already_ingested_handles(session)
+
     successes = 0
     failures = 0
+    skipped = 0
     for row in rows:
         handle = (row.get("handle") or "").strip()
         if not handle:
             continue
+        if handle.lower() in done_handles:
+            typer.echo(f"[skip] {handle}: already ingested (use --force to re-ingest)")
+            skipped += 1
+            continue
         try:
-            summary = ingest_channel(settings, handle)
+            summary = ingest_channel(settings, handle, limit=max_videos_per_channel)
         except Exception as exc:
             typer.secho(f"[FAIL] {handle}: {exc}", fg="red")
             failures += 1
@@ -275,8 +319,10 @@ def ingest_seed_channels(
             f"{summary.thumbnails_upserted} thumbnails{issue_note}"
         )
 
-    typer.secho(f"\n{successes} channel(s) ingested, {failures} failed", bold=True)
-    if successes == 0:
+    typer.secho(
+        f"\n{successes} channel(s) ingested, {skipped} skipped, {failures} failed", bold=True
+    )
+    if successes == 0 and skipped == 0:
         raise typer.Exit(1)
 
 

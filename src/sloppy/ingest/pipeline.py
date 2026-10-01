@@ -4,6 +4,7 @@ One video's failure (deleted, comments disabled and something else also going wr
 extraction failure, ...) is logged and skipped rather than aborting the whole run.
 """
 
+import itertools
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -126,7 +127,17 @@ def ingest_video(settings: Settings, video_id: str) -> IngestSummary:
     return summary
 
 
-def ingest_channel(settings: Settings, id_or_handle: str) -> IngestSummary:
+def ingest_channel(
+    settings: Settings, id_or_handle: str, limit: int | None = None
+) -> IngestSummary:
+    """`limit`, if given, caps ingestion to the `limit` MOST RECENT videos (the uploads
+    playlist is confirmed to return most-recent-first - verified directly against the
+    real API, not assumed). Uses itertools.islice, not a full-list-then-truncate, so a
+    channel with thousands of videos only pays for as many playlistItems.list pages as
+    the limit actually needs, not the whole history - important for the many real
+    channels with far more videos than any labeling pool will ever use (Phase 2 caps at
+    ~30/channel regardless).
+    """
     summary = IngestSummary()
     youtube = get_youtube_client(settings)
     s3_client = get_s3_client(settings)
@@ -137,7 +148,10 @@ def ingest_channel(settings: Settings, id_or_handle: str) -> IngestSummary:
     with session_scope() as session:
         upsert_channel(session, channel)
 
-    video_ids = list(iter_playlist_video_ids(youtube, channel.uploads_playlist_id))
+    video_id_iter = iter_playlist_video_ids(youtube, channel.uploads_playlist_id)
+    if limit is not None:
+        video_id_iter = itertools.islice(video_id_iter, limit)
+    video_ids = list(video_id_iter)
     for i in range(0, len(video_ids), VIDEO_BATCH_SIZE):
         batch_ids = video_ids[i : i + VIDEO_BATCH_SIZE]
         for video in fetch_videos_metadata(youtube, batch_ids):
