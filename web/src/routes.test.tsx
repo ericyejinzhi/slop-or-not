@@ -15,6 +15,7 @@ function mockEmptyVideoList() {
 
 function mockEmptyLabelPool() {
   server.use(http.get('/api/labels/pool', () => HttpResponse.json({ items: [] })))
+  server.use(http.get('/api/labels/channel-pool', () => HttpResponse.json({ items: [] })))
 }
 
 function renderAt(path: string) {
@@ -38,7 +39,7 @@ describe('AppRoutes', () => {
   it('renders the labeling page at /label', async () => {
     mockEmptyLabelPool()
     renderAt('/label')
-    expect(await screen.findByText(/no videos available to label/i)).toBeInTheDocument()
+    expect(await screen.findByText(/no channels available to label/i)).toBeInTheDocument()
   })
 
   it('renders the video detail page with the videoId param at /videos/:videoId', async () => {
@@ -93,6 +94,16 @@ describe('AppRoutes', () => {
     expect(await screen.findByText('Channel X')).toBeInTheDocument()
   })
 
+  it('renders the labeled videos page at /labeled', async () => {
+    server.use(
+      http.get('/api/labels', () =>
+        HttpResponse.json({ items: [], total: 0, limit: 20, offset: 0 }),
+      ),
+    )
+    renderAt('/labeled')
+    expect(await screen.findByText(/no labeled videos match these filters/i)).toBeInTheDocument()
+  })
+
   it('renders a not-found page for an unknown path', () => {
     renderAt('/something/nonexistent')
     expect(screen.getByText(/page not found/i)).toBeInTheDocument()
@@ -106,7 +117,7 @@ describe('AppRoutes', () => {
     await screen.findByText(/no videos match these filters/i)
 
     await user.click(screen.getByRole('link', { name: 'Label' }))
-    expect(await screen.findByText(/no videos available to label/i)).toBeInTheDocument()
+    expect(await screen.findByText(/no channels available to label/i)).toBeInTheDocument()
 
     await user.click(screen.getByRole('link', { name: 'Videos' }))
     expect(await screen.findByText(/no videos match these filters/i)).toBeInTheDocument()

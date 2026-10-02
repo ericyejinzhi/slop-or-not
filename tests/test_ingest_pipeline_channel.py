@@ -8,6 +8,8 @@ test coverage ingest_channel itself has ever had.
 
 from datetime import UTC, datetime
 
+import pytest
+
 from sloppy.config import Settings
 from sloppy.db.models import Channel, Video
 from sloppy.db.session import session_scope
@@ -112,3 +114,48 @@ def test_ingest_channel_limit_larger_than_available_ingests_all_available(monkey
         assert summary.videos_upserted == 3
     finally:
         _cleanup()
+
+
+def test_ingest_channel_sampling_stops_early_and_stays_within_the_window(monkeypatch):
+    """Guards the same regression `limit` already guards against (full-materialization
+    before truncating would hang on an infinite playlist), plus the sampling-specific
+    property that every chosen id actually came from within `sample_window`, not just
+    anywhere in the (effectively infinite) playlist."""
+    _cleanup()
+    try:
+        _patch_network(monkeypatch, total_available=None)
+
+        summary = pipeline.ingest_channel(_TEST_SETTINGS, "@fake", sample_window=20, sample_size=5)
+
+        assert summary.videos_upserted == 5
+        with session_scope() as session:
+            video_ids = [
+                row.id for row in session.query(Video).filter(Video.channel_id == TEST_CHANNEL_ID)
+            ]
+        assert len(video_ids) == 5
+        indices = {int(vid.removeprefix(TEST_VIDEO_PREFIX)) for vid in video_ids}
+        assert indices.issubset(set(range(20)))
+    finally:
+        _cleanup()
+
+
+def test_ingest_channel_sampling_returns_fewer_if_window_has_fewer_than_sample_size(
+    monkeypatch,
+):
+    _cleanup()
+    try:
+        _patch_network(monkeypatch, total_available=3)
+
+        summary = pipeline.ingest_channel(_TEST_SETTINGS, "@fake", sample_window=20, sample_size=10)
+
+        assert summary.videos_upserted == 3
+    finally:
+        _cleanup()
+
+
+def test_ingest_channel_sampling_requires_both_window_and_size_together():
+    with pytest.raises(ValueError, match="sample_window and sample_size"):
+        pipeline.ingest_channel(_TEST_SETTINGS, "@fake", sample_window=20)
+
+    with pytest.raises(ValueError, match="sample_window and sample_size"):
+        pipeline.ingest_channel(_TEST_SETTINGS, "@fake", sample_size=10)

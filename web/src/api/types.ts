@@ -101,7 +101,33 @@ export interface LabelPoolResponse {
   items: LabelPoolItem[]
 }
 
+export interface ChannelBatchPoolItem {
+  channel_id: string
+  channel_handle: string | null
+  videos: LabelPoolItem[]
+}
+
+export interface ChannelBatchPoolResponse {
+  items: ChannelBatchPoolItem[]
+}
+
 export type LabelValue = 'up' | 'down' | 'skip'
+
+export interface BatchLabelCreateRequest {
+  channel_id: string
+  video_ids: string[]
+  labeler?: string | null
+  label: LabelValue
+  notes?: string | null
+}
+
+export interface BatchLabelResponse {
+  channel_id: string
+  labeler: string
+  label: string
+  video_count: number
+  created_at: string
+}
 
 export interface LabelCreateRequest {
   video_id: string
@@ -116,6 +142,25 @@ export interface LabelResponse {
   label: string
   notes: string | null
   created_at: string
+}
+
+export interface LabeledVideoItem {
+  video_id: string
+  title: string
+  channel_id: string
+  channel_handle: string | null
+  thumbnail_url: string | null
+  label: LabelValue
+  labeler: string
+  labeled_at: string
+  label_count: number
+}
+
+export interface LabeledVideoListResponse {
+  items: LabeledVideoItem[]
+  total: number
+  limit: number
+  offset: number
 }
 
 export interface IngestRequest {

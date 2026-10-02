@@ -200,9 +200,264 @@ def test_get_label_pool_consistency_mode_returns_labeled_videos():
         with session_scope() as session:
             record_label(session, video_id=f"{POOL_VIDEO_PREFIX}0", labeler="t", label="up")
 
-        response = client.get("/labels/pool", params={"mode": "consistency"})
+        # consistency_sample draws an UNSEEDED random sample from every labeled video in
+        # the whole table, not just this test's fixture - this dev DB now also holds 100+
+        # real labels from actual use of the labeling page, so the default sample size
+        # (20) would only sometimes include this test's own video. A huge
+        # consistency_sample_size avoids anything being truncated away before it's found.
+        response = client.get(
+            "/labels/pool", params={"mode": "consistency", "consistency_sample_size": 100_000}
+        )
         assert response.status_code == 200
         video_ids = {item["video_id"] for item in response.json()["items"]}
         assert f"{POOL_VIDEO_PREFIX}0" in video_ids
     finally:
         _cleanup_pool()
+
+
+LIST_CHANNEL_ID = "UC_test_api_labels_list_channel"
+LIST_VIDEO_PREFIX = "test_api_labels_list_video_"
+
+
+def _cleanup_list() -> None:
+    with session_scope() as session:
+        video_ids = [
+            row[0] for row in session.query(Video.id).filter(Video.channel_id == LIST_CHANNEL_ID)
+        ]
+        session.query(Label).filter(Label.video_id.in_(video_ids)).delete(synchronize_session=False)
+        session.query(Video).filter(Video.channel_id == LIST_CHANNEL_ID).delete()
+        session.query(Channel).filter(Channel.id == LIST_CHANNEL_ID).delete()
+
+
+def test_get_labels_list_shows_most_recent_label_and_count_after_a_relabel():
+    _cleanup_list()
+    try:
+        with session_scope() as session:
+            upsert_channel(
+                session,
+                ChannelMeta(
+                    id=LIST_CHANNEL_ID,
+                    handle="@listchannel",
+                    title="List Channel",
+                    uploads_playlist_id="UU_x",
+                ),
+            )
+            upsert_video(
+                session,
+                VideoMeta(
+                    id=f"{LIST_VIDEO_PREFIX}0",
+                    channel_id=LIST_CHANNEL_ID,
+                    title="Relabeled Video",
+                    published_at=datetime.now(UTC),
+                ),
+            )
+        # Separate session_scope blocks (separate transactions), matching how two real
+        # POST /labels calls would actually happen - `created_at` uses
+        # server_default=func.now(), which returns the TRANSACTION's start time, so
+        # putting both in one transaction would give them an identical timestamp.
+        with session_scope() as session:
+            # First judgment, then a relabel - the list endpoint must reflect the LATEST
+            # one (down), not the first (up), while still counting both.
+            record_label(session, video_id=f"{LIST_VIDEO_PREFIX}0", labeler="alice", label="up")
+        with session_scope() as session:
+            record_label(session, video_id=f"{LIST_VIDEO_PREFIX}0", labeler="bob", label="down")
+
+        response = client.get("/labels", params={"q": "Relabeled"})
+        assert response.status_code == 200
+        body = response.json()
+        matches = [item for item in body["items"] if item["video_id"] == f"{LIST_VIDEO_PREFIX}0"]
+        assert len(matches) == 1
+        item = matches[0]
+        assert item["label"] == "down"
+        assert item["labeler"] == "bob"
+        assert item["label_count"] == 2
+        assert item["channel_handle"] == "@listchannel"
+    finally:
+        _cleanup_list()
+
+
+def test_get_labels_list_filters_by_label_value():
+    _cleanup_list()
+    try:
+        with session_scope() as session:
+            upsert_channel(
+                session,
+                ChannelMeta(id=LIST_CHANNEL_ID, title="List Channel", uploads_playlist_id="UU_x"),
+            )
+            for i, _label_value in enumerate(["up", "down"]):
+                upsert_video(
+                    session,
+                    VideoMeta(
+                        id=f"{LIST_VIDEO_PREFIX}{i}",
+                        channel_id=LIST_CHANNEL_ID,
+                        title=f"Filter Video {i}",
+                        published_at=datetime.now(UTC),
+                    ),
+                )
+        with session_scope() as session:
+            for i, label_value in enumerate(["up", "down"]):
+                record_label(
+                    session, video_id=f"{LIST_VIDEO_PREFIX}{i}", labeler="t", label=label_value
+                )
+
+        response = client.get("/labels", params={"label": "down", "q": "Filter Video"})
+        assert response.status_code == 200
+        video_ids = {item["video_id"] for item in response.json()["items"]}
+        assert video_ids == {f"{LIST_VIDEO_PREFIX}1"}
+    finally:
+        _cleanup_list()
+
+
+def test_get_labels_list_excludes_unlabeled_videos():
+    _cleanup_list()
+    try:
+        with session_scope() as session:
+            upsert_channel(
+                session,
+                ChannelMeta(id=LIST_CHANNEL_ID, title="List Channel", uploads_playlist_id="UU_x"),
+            )
+            upsert_video(
+                session,
+                VideoMeta(
+                    id=f"{LIST_VIDEO_PREFIX}0",
+                    channel_id=LIST_CHANNEL_ID,
+                    title="Never Labeled Video",
+                    published_at=datetime.now(UTC),
+                ),
+            )
+        response = client.get("/labels", params={"q": "Never Labeled"})
+        assert response.status_code == 200
+        assert response.json()["items"] == []
+    finally:
+        _cleanup_list()
+
+
+BATCH_CHANNEL_ID = "UC_test_api_labels_batch_channel"
+BATCH_VIDEO_PREFIX = "test_api_labels_batch_video_"
+
+
+def _cleanup_batch() -> None:
+    with session_scope() as session:
+        video_ids = [
+            row[0] for row in session.query(Video.id).filter(Video.channel_id == BATCH_CHANNEL_ID)
+        ]
+        session.query(Label).filter(Label.video_id.in_(video_ids)).delete(synchronize_session=False)
+        session.query(Video).filter(Video.channel_id == BATCH_CHANNEL_ID).delete()
+        session.query(Channel).filter(Channel.id == BATCH_CHANNEL_ID).delete()
+
+
+def _seed_batch_channel(n: int) -> list[str]:
+    with session_scope() as session:
+        upsert_channel(
+            session,
+            ChannelMeta(
+                id=BATCH_CHANNEL_ID,
+                handle="@batchchannel",
+                title="Batch Channel",
+                uploads_playlist_id="UU_x",
+            ),
+        )
+        for i in range(n):
+            upsert_video(
+                session,
+                VideoMeta(
+                    id=f"{BATCH_VIDEO_PREFIX}{i}",
+                    channel_id=BATCH_CHANNEL_ID,
+                    title=f"Batch Video {i}",
+                    published_at=datetime.now(UTC),
+                ),
+            )
+    return [f"{BATCH_VIDEO_PREFIX}{i}" for i in range(n)]
+
+
+def test_get_channel_batch_pool_groups_by_channel_and_excludes_labeled_channels():
+    _cleanup_batch()
+    try:
+        video_ids = _seed_batch_channel(4)
+
+        # Not yet labeled - the channel should appear, with all 4 videos in its batch.
+        # pool_size=200 (the max) so our test channel isn't crowded out by the real
+        # corpus's other ~34 channels also present in this shared dev DB.
+        response = client.get("/labels/channel-pool", params={"pool_size": 200})
+        assert response.status_code == 200
+        items = response.json()["items"]
+        match = [item for item in items if item["channel_id"] == BATCH_CHANNEL_ID]
+        assert len(match) == 1
+        assert {v["video_id"] for v in match[0]["videos"]} == set(video_ids)
+        assert match[0]["channel_handle"] == "@batchchannel"
+
+        # Label just one of its videos - the whole channel should now be excluded, since
+        # a channel-batch label applies atomically, so "partially labeled" isn't treated
+        # as "still needs labeling".
+        with session_scope() as session:
+            record_label(session, video_id=video_ids[0], labeler="t", label="up")
+
+        response = client.get("/labels/channel-pool", params={"pool_size": 200})
+        items = response.json()["items"]
+        match = [item for item in items if item["channel_id"] == BATCH_CHANNEL_ID]
+        assert match == []
+    finally:
+        _cleanup_batch()
+
+
+def test_post_labels_batch_creates_one_label_per_video_with_shared_labeler_and_label():
+    _cleanup_batch()
+    try:
+        video_ids = _seed_batch_channel(3)
+
+        response = client.post(
+            "/labels/batch",
+            json={
+                "channel_id": BATCH_CHANNEL_ID,
+                "video_ids": video_ids,
+                "labeler": "alice",
+                "label": "down",
+            },
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body == {
+            "channel_id": BATCH_CHANNEL_ID,
+            "labeler": "alice",
+            "label": "down",
+            "video_count": 3,
+            "created_at": body["created_at"],
+        }
+
+        with session_scope() as session:
+            rows = session.query(Label).filter(Label.video_id.in_(video_ids)).all()
+            assert len(rows) == 3
+            assert all(row.labeler == "alice" and row.label == "down" for row in rows)
+    finally:
+        _cleanup_batch()
+
+
+def test_post_labels_batch_404s_and_writes_nothing_if_a_video_id_is_wrong():
+    _cleanup_batch()
+    try:
+        video_ids = _seed_batch_channel(2)
+
+        response = client.post(
+            "/labels/batch",
+            json={
+                "channel_id": BATCH_CHANNEL_ID,
+                "video_ids": [*video_ids, "does-not-exist"],
+                "labeler": "alice",
+                "label": "up",
+            },
+        )
+        assert response.status_code == 404
+
+        with session_scope() as session:
+            count = session.query(Label).filter(Label.video_id.in_(video_ids)).count()
+        assert count == 0
+    finally:
+        _cleanup_batch()
+
+
+def test_post_labels_batch_400s_for_empty_video_ids():
+    response = client.post(
+        "/labels/batch",
+        json={"channel_id": BATCH_CHANNEL_ID, "video_ids": [], "labeler": "alice", "label": "up"},
+    )
+    assert response.status_code == 400

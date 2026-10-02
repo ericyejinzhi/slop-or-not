@@ -69,6 +69,66 @@ def sample_pool(
     return pool[:target_size]
 
 
+@dataclass
+class ChannelBatch:
+    channel_id: str
+    channel_handle: str | None
+    videos: list[PoolVideo]
+
+
+def candidate_channel_batches(session: Session, exclude_labeled: bool = True) -> list[ChannelBatch]:
+    """Groups every ingested video by channel, for channel-batch labeling - the current
+    primary labeling methodology (see docs/writeups/TODO.md). No per-channel cap is
+    applied here (unlike `candidate_videos`): channels are already sampled down to a
+    small, fixed size at ingest/trim time, so every video a channel has IS its batch.
+
+    `exclude_labeled=True` drops a channel entirely once ANY of its videos has a label
+    row - mirroring `candidate_videos`'s own "any label" exclusion semantics at the
+    channel level, since a channel-batch label is applied to the whole batch atomically
+    (see `sloppy.api.routers.labels.create_batch_label`), so "partially labeled" isn't a
+    normal state to design around.
+    """
+    stmt = select(Video.id, Video.channel_id, Video.published_at)
+    if exclude_labeled:
+        labeled_channel_ids = (
+            select(Video.channel_id).join(Label, Label.video_id == Video.id).distinct()
+        )
+        stmt = stmt.where(~Video.channel_id.in_(labeled_channel_ids))
+
+    rows = session.execute(stmt).all()
+    channel_handles = dict(session.execute(select(Channel.id, Channel.handle)).all())
+
+    grouped: dict[str, list[PoolVideo]] = {}
+    for row in rows:
+        grouped.setdefault(row.channel_id, []).append(
+            PoolVideo(
+                video_id=row.id,
+                channel_id=row.channel_id,
+                channel_handle=channel_handles.get(row.channel_id),
+                published_at=row.published_at,
+            )
+        )
+
+    return [
+        ChannelBatch(
+            channel_id=channel_id,
+            channel_handle=channel_handles.get(channel_id),
+            videos=videos,
+        )
+        for channel_id, videos in grouped.items()
+    ]
+
+
+def sample_channel_batches(
+    batches: list[ChannelBatch], target_size: int, seed: int | None = None
+) -> list[ChannelBatch]:
+    """Seeded shuffle, truncated to target_size (or all, shuffled, if fewer exist) -
+    same shape as `sample_pool`, just operating on whole channel batches."""
+    pool = list(batches)
+    random.Random(seed).shuffle(pool)
+    return pool[:target_size]
+
+
 def consistency_sample(session: Session, n: int = 20, seed: int | None = None) -> list[PoolVideo]:
     """Randomly sample `n` videos that already have a non-skip label, for the roadmap's
     consistency spot-check ("relabeling 20 videos a week later")."""

@@ -19,6 +19,7 @@ from sloppy.ingest.thumbnails import (
     extract_thumbnail_url,
     upload_thumbnail,
 )
+from sloppy.ingest.trim import trim_channel_to_sample
 from sloppy.ingest.youtube import (
     fetch_top_comments,
     fetch_videos_metadata,
@@ -218,8 +219,17 @@ def run_channel_ingest(
     max_videos: int | None = typer.Option(
         None,
         help="Only ingest the N most-recent videos (uploads playlist is most-recent-"
-        "first). Unset = entire channel history, which can be thousands of videos "
-        "for a large channel.",
+        "first). If set, this takes precedence over --sample-window/--sample-size "
+        "below. Unset = sampled selection (the project's current default methodology).",
+    ),
+    sample_window: int = typer.Option(
+        75,
+        help="Ignored if --max-videos is set. Randomly sample from the N most-recent "
+        "videos, instead of always taking the exact same most-recent ones - channel-"
+        "batch labeling wants a representative sample, not just the latest uploads.",
+    ),
+    sample_size: int = typer.Option(
+        10, help="Ignored if --max-videos is set. How many videos to randomly sample."
     ),
 ) -> None:
     """Ingest a channel end-to-end: videos, comments, thumbnails. Safe to re-run (upserts)."""
@@ -229,7 +239,15 @@ def run_channel_ingest(
         raise typer.Exit(1)
 
     try:
-        summary = ingest_channel(settings, id_or_handle, limit=max_videos)
+        if max_videos is not None:
+            summary = ingest_channel(settings, id_or_handle, limit=max_videos)
+        else:
+            summary = ingest_channel(
+                settings,
+                id_or_handle,
+                sample_window=sample_window,
+                sample_size=sample_size,
+            )
     except ValueError as exc:
         typer.secho(f"[FAIL] {exc}", fg="red")
         raise typer.Exit(1) from exc
@@ -260,11 +278,18 @@ def ingest_seed_channels(
     csv_path: Path = typer.Option(DEFAULT_SEED_CSV),  # noqa: B008
     limit: int | None = typer.Option(None, help="Only process the first N rows"),
     max_videos_per_channel: int | None = typer.Option(
-        30,
+        None,
         help="Only ingest the N most-recent videos per channel (uploads playlist is "
-        "most-recent-first). Defaults to 30, matching Phase 2's own per-channel labeling "
-        "pool cap. Pass a very large number (or edit the default in code) to fetch entire "
-        "channel histories instead.",
+        "most-recent-first). If set, this takes precedence over --sample-window/"
+        "--sample-size below. Unset = sampled selection (the project's current default "
+        "methodology - channel-batch labeling wants a representative sample per "
+        "channel, not always the exact same most-recent N).",
+    ),
+    sample_window: int = typer.Option(
+        75, help="Ignored if --max-videos-per-channel is set. See `slop ingest channel --help`."
+    ),
+    sample_size: int = typer.Option(
+        10, help="Ignored if --max-videos-per-channel is set. See `slop ingest channel --help`."
     ),
     force: bool = typer.Option(
         False,
@@ -306,7 +331,15 @@ def ingest_seed_channels(
             skipped += 1
             continue
         try:
-            summary = ingest_channel(settings, handle, limit=max_videos_per_channel)
+            if max_videos_per_channel is not None:
+                summary = ingest_channel(settings, handle, limit=max_videos_per_channel)
+            else:
+                summary = ingest_channel(
+                    settings,
+                    handle,
+                    sample_window=sample_window,
+                    sample_size=sample_size,
+                )
         except Exception as exc:
             typer.secho(f"[FAIL] {handle}: {exc}", fg="red")
             failures += 1
@@ -324,6 +357,87 @@ def ingest_seed_channels(
     )
     if successes == 0 and skipped == 0:
         raise typer.Exit(1)
+
+
+@ingest_app.command("trim-channel")
+def trim_channel(
+    id_or_handle: str,
+    keep: int = typer.Option(10, help="How many videos to randomly keep for this channel"),
+    seed: int | None = typer.Option(None),
+    yes: bool = typer.Option(False, "--yes", help="Skip the confirmation prompt"),
+) -> None:
+    """Randomly trims an already-ingested channel down to `keep` videos, deleting the
+    rest along with their comments/thumbnails (DB rows and the real S3/MinIO objects).
+    Re-ingestable from YouTube later, but not free - confirms before deleting."""
+    with session_scope() as session:
+        channel = (
+            session.query(Channel)
+            .filter((Channel.id == id_or_handle) | (Channel.handle == id_or_handle))
+            .first()
+        )
+        if channel is None:
+            typer.secho(f"[FAIL] No ingested channel matching {id_or_handle!r}", fg="red")
+            raise typer.Exit(1)
+        channel_id = channel.id
+        before = session.query(Video).filter(Video.channel_id == channel_id).count()
+
+    if before <= keep:
+        typer.echo(f"{id_or_handle}: already has {before} videos (<= {keep}), nothing to trim")
+        return
+
+    if not yes and not typer.confirm(
+        f"Delete up to {before - keep} of {before} videos for {id_or_handle} (keeping {keep} - "
+        "fewer may be deleted if more than that many are already labeled)?"
+    ):
+        typer.echo("Aborted.")
+        raise typer.Exit(1)
+
+    settings = get_settings()
+    s3_client = get_s3_client(settings)
+    with session_scope() as session:
+        deleted = trim_channel_to_sample(session, s3_client, channel_id, keep=keep, seed=seed)
+
+    typer.secho(f"{id_or_handle}: deleted {deleted} videos, kept {before - deleted}", bold=True)
+
+
+@ingest_app.command("trim-all")
+def trim_all(
+    keep: int = typer.Option(10, help="How many videos to randomly keep per channel"),
+    seed: int | None = typer.Option(None),
+    yes: bool = typer.Option(False, "--yes", help="Skip the confirmation prompt"),
+) -> None:
+    """Runs trim-channel's logic across every ingested channel in the DB. Confirms once,
+    up front, with a total count - not per-channel."""
+    with session_scope() as session:
+        channel_rows = session.query(Channel.id, Channel.handle).all()
+        counts = dict(
+            session.query(Video.channel_id, func.count(Video.id)).group_by(Video.channel_id).all()
+        )
+
+    trimmable = [(cid, handle) for cid, handle in channel_rows if counts.get(cid, 0) > keep]
+    if not trimmable:
+        typer.echo(f"No channel has more than {keep} videos - nothing to trim.")
+        return
+
+    total_to_delete = sum(counts[cid] - keep for cid, _ in trimmable)
+    if not yes and not typer.confirm(
+        f"Delete up to {total_to_delete} videos total across {len(trimmable)} channel(s) "
+        f"(keeping {keep} each - fewer may be deleted per channel if more than that many "
+        "are already labeled)?"
+    ):
+        typer.echo("Aborted.")
+        raise typer.Exit(1)
+
+    settings = get_settings()
+    s3_client = get_s3_client(settings)
+    for channel_id, handle in trimmable:
+        with session_scope() as session:
+            deleted = trim_channel_to_sample(session, s3_client, channel_id, keep=keep, seed=seed)
+        typer.echo(f"[ok] {handle or channel_id}: deleted {deleted} videos")
+
+    typer.secho(
+        f"\nDone - {total_to_delete} videos deleted across {len(trimmable)} channel(s)", bold=True
+    )
 
 
 @label_app.command("seed-status")

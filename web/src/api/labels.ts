@@ -1,5 +1,14 @@
 import { buildQuery, get, post } from './client'
-import type { LabelCreateRequest, LabelPoolResponse, LabelResponse } from './types'
+import type {
+  BatchLabelCreateRequest,
+  BatchLabelResponse,
+  ChannelBatchPoolResponse,
+  LabeledVideoListResponse,
+  LabelCreateRequest,
+  LabelPoolResponse,
+  LabelResponse,
+  LabelValue,
+} from './types'
 
 export interface LabelPoolParams {
   mode?: 'pool' | 'consistency'
@@ -15,4 +24,32 @@ export function getLabelPool(params: LabelPoolParams = {}): Promise<LabelPoolRes
 
 export function createLabel(body: LabelCreateRequest): Promise<LabelResponse> {
   return post<LabelResponse>('/labels', body)
+}
+
+export interface ChannelBatchPoolParams {
+  pool_size?: number
+  seed?: number
+}
+
+export function getChannelBatchPool(
+  params: ChannelBatchPoolParams = {},
+): Promise<ChannelBatchPoolResponse> {
+  return get<ChannelBatchPoolResponse>(`/labels/channel-pool${buildQuery(params)}`)
+}
+
+export function createBatchLabel(body: BatchLabelCreateRequest): Promise<BatchLabelResponse> {
+  return post<BatchLabelResponse>('/labels/batch', body)
+}
+
+export interface ListLabeledVideosParams {
+  q?: string
+  label?: LabelValue
+  limit?: number
+  offset?: number
+}
+
+export function listLabeledVideos(
+  params: ListLabeledVideosParams = {},
+): Promise<LabeledVideoListResponse> {
+  return get<LabeledVideoListResponse>(`/labels${buildQuery(params)}`)
 }

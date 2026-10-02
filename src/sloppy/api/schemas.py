@@ -118,6 +118,16 @@ class LabelPoolResponse(BaseModel):
     items: list[LabelPoolItem]
 
 
+class ChannelBatchPoolItem(BaseModel):
+    channel_id: str
+    channel_handle: str | None
+    videos: list[LabelPoolItem]
+
+
+class ChannelBatchPoolResponse(BaseModel):
+    items: list[ChannelBatchPoolItem]
+
+
 class IngestRequest(BaseModel):
     channel: str | None = None
     video_id: str | None = None
@@ -147,3 +157,42 @@ class LabelResponse(BaseModel):
     label: str
     notes: str | None
     created_at: datetime
+
+
+class BatchLabelCreateRequest(BaseModel):
+    channel_id: str
+    video_ids: list[str]
+    labeler: str | None = None
+    label: Literal["up", "down", "skip"]
+    notes: str | None = None
+
+
+class BatchLabelResponse(BaseModel):
+    channel_id: str
+    labeler: str
+    label: str
+    video_count: int
+    created_at: datetime
+
+
+class LabeledVideoItem(BaseModel):
+    """A video's MOST RECENT label (a video may be relabeled - `labels` keeps every row,
+    this always reflects the latest judgment). `label_count` is how many times it's been
+    labeled in total, surfaced so a relabel isn't made blind to prior history."""
+
+    video_id: str
+    title: str
+    channel_id: str
+    channel_handle: str | None
+    thumbnail_url: str | None
+    label: str
+    labeler: str
+    labeled_at: datetime
+    label_count: int
+
+
+class LabeledVideoListResponse(BaseModel):
+    items: list[LabeledVideoItem]
+    total: int
+    limit: int
+    offset: int

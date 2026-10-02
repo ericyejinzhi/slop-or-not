@@ -6,6 +6,7 @@ extraction failure, ...) is logged and skipped rather than aborting the whole ru
 
 import itertools
 import logging
+import random
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -127,17 +128,51 @@ def ingest_video(settings: Settings, video_id: str) -> IngestSummary:
     return summary
 
 
-def ingest_channel(
-    settings: Settings, id_or_handle: str, limit: int | None = None
-) -> IngestSummary:
-    """`limit`, if given, caps ingestion to the `limit` MOST RECENT videos (the uploads
-    playlist is confirmed to return most-recent-first - verified directly against the
-    real API, not assumed). Uses itertools.islice, not a full-list-then-truncate, so a
-    channel with thousands of videos only pays for as many playlistItems.list pages as
-    the limit actually needs, not the whole history - important for the many real
-    channels with far more videos than any labeling pool will ever use (Phase 2 caps at
-    ~30/channel regardless).
+def _sample_recent_video_ids(
+    youtube, playlist_id: str, *, window: int, sample_size: int, seed: int | None = None
+) -> list[str]:
+    """Random sample of `sample_size` ids drawn from the `window` MOST RECENT videos
+    (not the channel's entire history - channels drift/pivot, so an old video is a poor
+    representative of what the channel looks like today). `window` is bounded via
+    itertools.islice, same laziness property as `limit` below - a channel with thousands
+    of videos still only pays for ceil(window / 50) playlistItems.list pages, never the
+    whole history. Returns fewer than `sample_size` only if the channel has fewer than
+    `window` videos total.
     """
+    recent_ids = list(itertools.islice(iter_playlist_video_ids(youtube, playlist_id), window))
+    return random.Random(seed).sample(recent_ids, min(sample_size, len(recent_ids)))
+
+
+def ingest_channel(
+    settings: Settings,
+    id_or_handle: str,
+    limit: int | None = None,
+    sample_window: int | None = None,
+    sample_size: int | None = None,
+    sample_seed: int | None = None,
+) -> IngestSummary:
+    """Two mutually exclusive selection strategies for which videos to ingest:
+
+    - `limit`: caps ingestion to the `limit` MOST RECENT videos (the uploads playlist is
+      confirmed to return most-recent-first - verified directly against the real API,
+      not assumed). Uses itertools.islice, not a full-list-then-truncate, so a channel
+      with thousands of videos only pays for as many playlistItems.list pages as the
+      limit actually needs, not the whole history.
+    - `sample_window` + `sample_size` (both required together): a random sample of
+      `sample_size` videos drawn from the `sample_window` most recent, via
+      `_sample_recent_video_ids` above. This is the project's current primary labeling
+      methodology (channel-batch labeling, see docs/writeups/TODO.md) - a small random
+      sample is more representative of "what does this channel's content generally look
+      like" than always taking the same most-recent N, and incidentally picks up Shorts
+      without any special-casing, since they already appear in the uploads playlist.
+
+    Passing only one of `sample_window`/`sample_size` is almost certainly a mistake
+    (ambiguous what the other should default to), so it's rejected outright rather than
+    silently guessing.
+    """
+    if (sample_window is None) != (sample_size is None):
+        raise ValueError("sample_window and sample_size must be given together")
+
     summary = IngestSummary()
     youtube = get_youtube_client(settings)
     s3_client = get_s3_client(settings)
@@ -148,10 +183,20 @@ def ingest_channel(
     with session_scope() as session:
         upsert_channel(session, channel)
 
-    video_id_iter = iter_playlist_video_ids(youtube, channel.uploads_playlist_id)
-    if limit is not None:
-        video_id_iter = itertools.islice(video_id_iter, limit)
-    video_ids = list(video_id_iter)
+    if sample_window is not None and sample_size is not None:
+        video_ids = _sample_recent_video_ids(
+            youtube,
+            channel.uploads_playlist_id,
+            window=sample_window,
+            sample_size=sample_size,
+            seed=sample_seed,
+        )
+    else:
+        video_id_iter = iter_playlist_video_ids(youtube, channel.uploads_playlist_id)
+        if limit is not None:
+            video_id_iter = itertools.islice(video_id_iter, limit)
+        video_ids = list(video_id_iter)
+
     for i in range(0, len(video_ids), VIDEO_BATCH_SIZE):
         batch_ids = video_ids[i : i + VIDEO_BATCH_SIZE]
         for video in fetch_videos_metadata(youtube, batch_ids):

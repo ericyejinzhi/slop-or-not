@@ -108,8 +108,15 @@ def test_consistency_sample_only_returns_non_skip_labeled_videos():
             record_label(session, video_id=f"{TEST_VIDEO_PREFIX}1", labeler="t", label="skip")
             # video 2 has no label at all
 
+        # n is deliberately huge, not a realistic session size - this dev DB now also
+        # holds real labels from actual use of the labeling page (confirmed: the labels
+        # table has 100+ real rows outside this test's own fixtures). consistency_sample
+        # draws an UNSEEDED random sample from every labeled video in the table, so a
+        # small n would only sometimes include this test's own fixture video - n here
+        # just needs to exceed the real table's size so nothing gets truncated away
+        # before the per-channel filter below gets a chance to look for it.
         with session_scope() as session:
-            sampled = consistency_sample(session, n=10)
+            sampled = consistency_sample(session, n=100_000)
 
         this_channel_ids = {v.video_id for v in sampled if v.channel_id == TEST_CHANNEL_ID}
         assert this_channel_ids == {f"{TEST_VIDEO_PREFIX}0"}

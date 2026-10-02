@@ -20,6 +20,9 @@ export function Layout() {
           <NavLink to="/label" className={navLinkClass}>
             Label
           </NavLink>
+          <NavLink to="/labeled" className={navLinkClass}>
+            Labeled
+          </NavLink>
         </nav>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-6">

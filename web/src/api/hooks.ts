@@ -1,8 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getChannel } from './channels'
 import { createIngest } from './ingest'
-import { createLabel, getLabelPool, type LabelPoolParams } from './labels'
-import type { IngestRequest, LabelCreateRequest } from './types'
+import {
+  createBatchLabel,
+  createLabel,
+  getChannelBatchPool,
+  getLabelPool,
+  listLabeledVideos,
+  type ChannelBatchPoolParams,
+  type LabelPoolParams,
+  type ListLabeledVideosParams,
+} from './labels'
+import type { BatchLabelCreateRequest, IngestRequest, LabelCreateRequest } from './types'
 import { getVideoDetail, listVideos, type ListVideosParams, type VideoDetailParams } from './videos'
 
 export function useVideos(params: ListVideosParams) {
@@ -42,8 +51,43 @@ export function useLabelPool(params: LabelPoolParams, enabled = true) {
 }
 
 export function useCreateLabel() {
+  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: LabelCreateRequest) => createLabel(body),
+    onSuccess: () => {
+      // Keeps LabeledVideosPage's list/search results current after a (re)label from
+      // either page - cheap no-op if that query isn't mounted.
+      void queryClient.invalidateQueries({ queryKey: ['labeledVideos'] })
+    },
+  })
+}
+
+export function useChannelBatchPool(params: ChannelBatchPoolParams, enabled = true) {
+  return useQuery({
+    queryKey: ['channelBatchPool', params],
+    queryFn: () => getChannelBatchPool(params),
+    enabled,
+    // Same rationale as useLabelPool - fetched once per session, re-fetched explicitly
+    // (via the auto-refill effect) rather than reshuffled in the background mid-session.
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  })
+}
+
+export function useCreateBatchLabel() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: BatchLabelCreateRequest) => createBatchLabel(body),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['labeledVideos'] })
+    },
+  })
+}
+
+export function useLabeledVideos(params: ListLabeledVideosParams) {
+  return useQuery({
+    queryKey: ['labeledVideos', params],
+    queryFn: () => listLabeledVideos(params),
   })
 }
 
