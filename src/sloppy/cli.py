@@ -7,6 +7,7 @@ import pandas as pd
 import typer
 from sqlalchemy import func
 
+from sloppy import cli_ui
 from sloppy.config import get_settings
 from sloppy.db.models import Channel, Label, Thumbnail, Video, VideoScore
 from sloppy.db.session import session_scope
@@ -245,15 +246,16 @@ def run_channel_ingest(
         raise typer.Exit(1)
 
     try:
-        if max_videos is not None:
-            summary = ingest_channel(settings, id_or_handle, limit=max_videos)
-        else:
-            summary = ingest_channel(
-                settings,
-                id_or_handle,
-                sample_window=sample_window,
-                sample_size=sample_size,
-            )
+        with cli_ui.spinner(f"Ingesting {id_or_handle}..."):
+            if max_videos is not None:
+                summary = ingest_channel(settings, id_or_handle, limit=max_videos)
+            else:
+                summary = ingest_channel(
+                    settings,
+                    id_or_handle,
+                    sample_window=sample_window,
+                    sample_size=sample_size,
+                )
     except ValueError as exc:
         typer.secho(f"[FAIL] {exc}", fg="red")
         raise typer.Exit(1) from exc
@@ -328,35 +330,40 @@ def ingest_seed_channels(
     successes = 0
     failures = 0
     skipped = 0
-    for row in rows:
-        handle = (row.get("handle") or "").strip()
-        if not handle:
-            continue
-        if handle.lower() in done_handles:
-            typer.echo(f"[skip] {handle}: already ingested (use --force to re-ingest)")
-            skipped += 1
-            continue
-        try:
-            if max_videos_per_channel is not None:
-                summary = ingest_channel(settings, handle, limit=max_videos_per_channel)
+    with cli_ui.spinner("Starting ingestion...") as status:
+        for row in rows:
+            handle = (row.get("handle") or "").strip()
+            if not handle:
+                continue
+            if handle.lower() in done_handles:
+                cli_ui.skip(f"{handle}: already ingested (use --force to re-ingest)")
+                skipped += 1
+                continue
+            status.update(f"Ingesting {handle} ({successes + failures + skipped + 1}/{len(rows)})")
+            try:
+                if max_videos_per_channel is not None:
+                    summary = ingest_channel(settings, handle, limit=max_videos_per_channel)
+                else:
+                    summary = ingest_channel(
+                        settings,
+                        handle,
+                        sample_window=sample_window,
+                        sample_size=sample_size,
+                    )
+            except Exception as exc:
+                cli_ui.fail(f"{handle}: {exc}")
+                failures += 1
+                continue
+            successes += 1
+            counts = (
+                f"{summary.videos_upserted} videos, "
+                f"{summary.comments_upserted} comments, "
+                f"{summary.thumbnails_upserted} thumbnails"
+            )
+            if summary.errors:
+                cli_ui.warn(f"{handle}: {counts} ({len(summary.errors)} issue(s))")
             else:
-                summary = ingest_channel(
-                    settings,
-                    handle,
-                    sample_window=sample_window,
-                    sample_size=sample_size,
-                )
-        except Exception as exc:
-            typer.secho(f"[FAIL] {handle}: {exc}", fg="red")
-            failures += 1
-            continue
-        successes += 1
-        issue_note = f" ({len(summary.errors)} issue(s))" if summary.errors else ""
-        typer.echo(
-            f"[ok] {handle}: {summary.videos_upserted} videos, "
-            f"{summary.comments_upserted} comments, "
-            f"{summary.thumbnails_upserted} thumbnails{issue_note}"
-        )
+                cli_ui.ok(f"{handle}: {counts}")
 
     typer.secho(
         f"\n{successes} channel(s) ingested, {skipped} skipped, {failures} failed", bold=True
@@ -436,10 +443,14 @@ def trim_all(
 
     settings = get_settings()
     s3_client = get_s3_client(settings)
-    for channel_id, handle in trimmable:
-        with session_scope() as session:
-            deleted = trim_channel_to_sample(session, s3_client, channel_id, keep=keep, seed=seed)
-        typer.echo(f"[ok] {handle or channel_id}: deleted {deleted} videos")
+    with cli_ui.spinner("Trimming...") as status:
+        for channel_id, handle in trimmable:
+            status.update(f"Trimming {handle or channel_id}")
+            with session_scope() as session:
+                deleted = trim_channel_to_sample(
+                    session, s3_client, channel_id, keep=keep, seed=seed
+                )
+            cli_ui.ok(f"{handle or channel_id}: deleted {deleted} videos")
 
     typer.secho(
         f"\nDone - {total_to_delete} videos deleted across {len(trimmable)} channel(s)", bold=True
@@ -1019,9 +1030,10 @@ def compute_nlp(
 ) -> None:
     """Compute + persist sentiment, comment-topic, and title-intent NLP features
     (including embeddings) for ingested videos. Idempotent - re-running overwrites."""
-    processed = compute_nlp_features(
-        video_id=video_id, limit=limit, channel_id=channel_id, only_missing=only_missing
-    )
+    with cli_ui.spinner("Computing NLP features (model loading can take a while)..."):
+        processed = compute_nlp_features(
+            video_id=video_id, limit=limit, channel_id=channel_id, only_missing=only_missing
+        )
 
     if not processed:
         typer.secho("No matching videos found.", fg="yellow")
@@ -1045,9 +1057,14 @@ def compute_vision(
     """Compute + persist CLIP thumbnail embeddings + zero-shot scores for ingested
     videos that have a thumbnail on record. Idempotent - re-running overwrites."""
     settings = get_settings()
-    processed = compute_vision_features(
-        settings, video_id=video_id, limit=limit, channel_id=channel_id, only_missing=only_missing
-    )
+    with cli_ui.spinner("Computing vision features (model loading can take a while)..."):
+        processed = compute_vision_features(
+            settings,
+            video_id=video_id,
+            limit=limit,
+            channel_id=channel_id,
+            only_missing=only_missing,
+        )
 
     if not processed:
         typer.secho("No videos with a thumbnail on record found.", fg="yellow")
