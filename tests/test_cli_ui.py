@@ -47,3 +47,23 @@ def test_spinner_is_noop_when_not_a_tty_and_messages_still_print(buf):
     assert "[ok] one" in out
     assert "\r" not in out
     assert "still working" not in out
+
+
+def test_force_terminal_on_in_git_bash(monkeypatch):
+    monkeypatch.delenv("SLOP_PLAIN", raising=False)
+    monkeypatch.setenv("MSYSTEM", "MINGW64")
+    monkeypatch.setenv("TERM", "xterm-256color")
+    assert cli_ui._force_terminal() is True
+
+
+def test_force_terminal_defers_to_rich_outside_git_bash(monkeypatch):
+    monkeypatch.delenv("SLOP_PLAIN", raising=False)
+    monkeypatch.delenv("MSYSTEM", raising=False)
+    assert cli_ui._force_terminal() is None
+
+
+def test_slop_plain_opts_out_even_in_git_bash(monkeypatch):
+    monkeypatch.setenv("MSYSTEM", "MINGW64")
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.setenv("SLOP_PLAIN", "1")
+    assert cli_ui._force_terminal() is False

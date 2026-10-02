@@ -6,6 +6,7 @@ of work. rich disables the live line automatically when stdout isn't a TTY, so p
 output stays plain.
 """
 
+import os
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -14,7 +15,20 @@ from rich.console import Console
 from rich.markup import escape
 from rich.status import Status
 
-console = Console(highlight=False)
+
+def _force_terminal() -> bool | None:
+    """Git Bash (mintty) hands Python a pipe instead of a TTY, so rich concludes it is
+    not interactive and silently disables the live spinner - even though mintty renders
+    ANSI fine. Force it on there. SLOP_PLAIN=1 opts out (e.g. when redirecting to a
+    file from Git Bash); None leaves rich's own detection alone everywhere else."""
+    if os.environ.get("SLOP_PLAIN"):
+        return False
+    if os.environ.get("MSYSTEM") and os.environ.get("TERM"):
+        return True
+    return None
+
+
+console = Console(highlight=False, force_terminal=_force_terminal())
 
 
 def _spinner_name() -> str:
