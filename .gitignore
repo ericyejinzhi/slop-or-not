@@ -14,6 +14,9 @@ build/
 .pytest_cache/
 .mypy_cache/
 
+# scripts/start-dev.sh output
+.dev-logs/
+
 # Data & artifacts (tracked selectively)
 data/*
 !data/seed_channels.csv
@@ -32,3 +35,5 @@ web/dist/
 Thumbs.db
 .idea/
 .vscode/
+
+notes.txt

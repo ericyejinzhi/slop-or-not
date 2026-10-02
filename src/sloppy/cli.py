@@ -30,7 +30,13 @@ from sloppy.ingest.youtube import (
 from sloppy.label.display import cache_thumbnail, open_image
 from sloppy.label.keyboard import action_for_key, read_key
 from sloppy.label.labels import record_label
-from sloppy.label.pool import candidate_videos, consistency_sample, sample_pool
+from sloppy.label.pool import (
+    candidate_channel_batches,
+    candidate_videos,
+    consistency_sample,
+    sample_channel_batches,
+    sample_pool,
+)
 from sloppy.label.split import assign_channels_to_splits, canonical_labels, channel_stats
 from sloppy.models.ablation import format_ablation_table
 from sloppy.models.evaluate import BinaryMetrics, evaluate
@@ -529,15 +535,52 @@ def pool_preview(
         typer.echo(f"  {genre}: {count}")
 
 
+def _display_video(s3_client, pool_video, video, thumbnail) -> None:
+    """Shared by both labeling modes below - prints one video's info and opens its
+    thumbnail, identical to what the web labeling page shows for the same video."""
+    typer.secho(f"\n{video.title!r}", bold=True)
+    typer.echo(f"  channel:   {pool_video.channel_handle or pool_video.channel_id}")
+    typer.echo(f"  published: {video.published_at}")
+    typer.echo(f"  duration:  {video.duration_seconds}s")
+    typer.echo(
+        f"  views/likes/comments: {video.view_count}/{video.like_count}/{video.comment_count}"
+    )
+
+    if thumbnail is not None:
+        try:
+            path = cache_thumbnail(
+                s3_client, video.id, thumbnail.s3_bucket, thumbnail.s3_key, thumbnail.content_type
+            )
+            open_image(path)
+        except Exception as exc:
+            typer.secho(f"  [warn] could not open thumbnail: {exc}", fg="yellow")
+    else:
+        typer.secho("  [warn] no thumbnail on record for this video", fg="yellow")
+
+
+def _prompt_action() -> str:
+    typer.echo("  [y]up  [n]down  [s]kip  [q]uit > ", nl=False)
+    action = None
+    while action is None:
+        action = action_for_key(read_key())
+    typer.echo(action)
+    return action
+
+
 @label_app.command("run")
 def run_labeling(
     labeler: str | None = typer.Option(None, help="Defaults to LABELER_NAME in .env"),
-    limit: int = typer.Option(50, help="Stop after this many labels this session"),
-    per_channel_max: int = typer.Option(30),
-    pool_size: int = typer.Option(400),
+    limit: int = typer.Option(50, help="Stop after this many videos labeled this session"),
+    per_channel_max: int = typer.Option(30, help="Ignored for --mode channel"),
+    pool_size: int = typer.Option(
+        400, help="Candidate videos for pool mode, or candidate CHANNELS for channel mode"
+    ),
     seed: int | None = typer.Option(None),
     mode: str = typer.Option(
-        "pool", help="'pool' (fresh videos) or 'consistency' (relabel a past sample)"
+        "channel",
+        help="'channel' (label a whole channel's sampled batch at once - the project's "
+        "current default methodology), 'pool' (one fresh video at a time), or "
+        "'consistency' (relabel a past sample)",
     ),
     consistency_sample_size: int = typer.Option(20),
 ) -> None:
@@ -550,6 +593,10 @@ def run_labeling(
         )
         raise typer.Exit(1)
 
+    if mode == "channel":
+        run_channel_batch_labeling(effective_labeler, limit, pool_size, seed)
+        return
+
     if mode == "consistency":
         with session_scope() as session:
             pool = consistency_sample(session, n=consistency_sample_size, seed=seed)
@@ -560,7 +607,9 @@ def run_labeling(
             )
         pool = sample_pool(candidates, target_size=pool_size, seed=seed)
     else:
-        typer.secho(f"[FAIL] --mode must be 'pool' or 'consistency', got {mode!r}", fg="red")
+        typer.secho(
+            f"[FAIL] --mode must be 'channel', 'pool', or 'consistency', got {mode!r}", fg="red"
+        )
         raise typer.Exit(1)
 
     if not pool:
@@ -584,41 +633,71 @@ def run_labeling(
         if video is None:
             continue
 
-        typer.secho(f"\n{video.title!r}", bold=True)
-        typer.echo(f"  channel:   {pool_video.channel_handle or pool_video.channel_id}")
-        typer.echo(f"  published: {video.published_at}")
-        typer.echo(f"  duration:  {video.duration_seconds}s")
-        typer.echo(
-            f"  views/likes/comments: {video.view_count}/{video.like_count}/{video.comment_count}"
-        )
-
-        if thumbnail is not None:
-            try:
-                path = cache_thumbnail(
-                    s3_client,
-                    video.id,
-                    thumbnail.s3_bucket,
-                    thumbnail.s3_key,
-                    thumbnail.content_type,
-                )
-                open_image(path)
-            except Exception as exc:
-                typer.secho(f"  [warn] could not open thumbnail: {exc}", fg="yellow")
-        else:
-            typer.secho("  [warn] no thumbnail on record for this video", fg="yellow")
-
-        typer.echo("  [y]up  [n]down  [s]kip  [q]uit > ", nl=False)
-        action = None
-        while action is None:
-            action = action_for_key(read_key())
-        typer.echo(action)
-
+        _display_video(s3_client, pool_video, video, thumbnail)
+        action = _prompt_action()
         if action == "quit":
             break
 
         with session_scope() as session:
             record_label(session, video_id=video.id, labeler=effective_labeler, label=action)
         labeled_count += 1
+
+    typer.secho(f"\nLabeled {labeled_count} video(s) this session.", bold=True)
+
+
+def run_channel_batch_labeling(
+    effective_labeler: str, limit: int, pool_size: int, seed: int | None
+) -> None:
+    """`slop label run --mode channel` - the project's current default labeling
+    methodology (see docs/writeups/TODO.md). One keypress labels every video in a
+    channel's sampled batch at once, via the same candidate_channel_batches/
+    sample_channel_batches pool functions the web labeling page's channel mode uses
+    (src/sloppy/api/routers/labels.py's GET /labels/channel-pool).
+    """
+    settings = get_settings()
+    with session_scope() as session:
+        batches = candidate_channel_batches(session, exclude_labeled=True)
+    batches = sample_channel_batches(batches, target_size=pool_size, seed=seed)
+
+    if not batches:
+        typer.secho("No channels available to label.", fg="yellow")
+        raise typer.Exit(0)
+
+    typer.secho(
+        f"Labeling as '{effective_labeler}'. {len(batches)} channel(s) in this pool.", bold=True
+    )
+    typer.echo("Keys: y=up (quality)   n=down (slop)   s=skip   q=quit\n")
+
+    s3_client = get_s3_client(settings)
+    labeled_count = 0
+
+    for batch in batches:
+        if labeled_count >= limit:
+            break
+
+        typer.secho(f"\n=== {batch.channel_handle or batch.channel_id} ===", bold=True)
+        videos_by_id = {}
+        with session_scope() as session:
+            for pool_video in batch.videos:
+                video = session.get(Video, pool_video.video_id)
+                thumbnail = session.get(Thumbnail, pool_video.video_id)
+                if video is None:
+                    continue
+                videos_by_id[pool_video.video_id] = video
+                _display_video(s3_client, pool_video, video, thumbnail)
+
+        if not videos_by_id:
+            continue
+
+        typer.echo(f"\n  {len(videos_by_id)} video(s) shown above for this channel.")
+        action = _prompt_action()
+        if action == "quit":
+            break
+
+        with session_scope() as session:
+            for video_id in videos_by_id:
+                record_label(session, video_id=video_id, labeler=effective_labeler, label=action)
+        labeled_count += len(videos_by_id)
 
     typer.secho(f"\nLabeled {labeled_count} video(s) this session.", bold=True)
 
