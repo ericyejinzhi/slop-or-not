@@ -29,7 +29,9 @@ def score_comments(texts: list[str]) -> list[float]:
     if not texts:
         return []
     pipe = _load_pipeline()
-    results = pipe(texts)
+    # Real YouTube comments can exceed the model's 512-token limit (RoBERTa has 514
+    # position embeddings); without truncation one long comment crashes the whole batch.
+    results = pipe(texts, truncation=True, max_length=512)
     scores = []
     for result in results:
         by_label = {item["label"].lower(): item["score"] for item in result}

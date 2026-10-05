@@ -63,6 +63,20 @@ def test_score_comments_empty_list_returns_empty():
     assert score_comments([]) == []
 
 
+def test_score_comments_truncates_long_inputs(monkeypatch):
+    # Regression: a comment past the model's 512-token limit crashed real ingestion data
+    # ("index 514 is out of bounds") because the pipeline was called without truncation.
+    calls = {}
+
+    def fake_pipe(texts, **kwargs):
+        calls.update(kwargs)
+        return [[{"label": "positive", "score": 0.75}, {"label": "negative", "score": 0.25}]]
+
+    monkeypatch.setattr("sloppy.features.sentiment._load_pipeline", lambda: fake_pipe)
+    assert score_comments(["word " * 2000]) == [0.5]
+    assert calls == {"truncation": True, "max_length": 512}
+
+
 @pytest.mark.slow
 def test_score_comments_real_model_gets_sign_right():
     scores = score_comments(["this is amazing content", "worst video ever, total slop"])
