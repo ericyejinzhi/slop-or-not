@@ -1,5 +1,12 @@
-"""Channel-grouped, stratified train/val/test split.
+"""Train/val/test splits: per-video (label-stratified) or channel-grouped.
 
+Labeling is done per channel, but `assign_videos_to_splits` deliberately ignores channels
+when splitting - a video's channel can land in train AND test. That's an explicit choice
+(see `slop label make-splits --group-by`); it inflates metrics versus the channel-grouped
+split below, since the model can pick up channel-specific style. The channel-grouped path
+is kept for an honest generalization check.
+
+Channel-grouped path:
 No scikit-learn dependency (reserved for Phase 3) - a seeded greedy bin-packing heuristic
 assigns whole channels to splits, balancing split size and up/down ratio against targets.
 Never splits a single channel's videos across sets.
@@ -62,6 +69,32 @@ def channel_stats(canonical: dict[str, tuple[str, str]]) -> list[ChannelLabelSta
     return [
         ChannelLabelStats(channel_id=cid, up=up, down=down) for cid, (up, down) in counts.items()
     ]
+
+
+def assign_videos_to_splits(
+    canonical: dict[str, tuple[str, str]],
+    proportions: tuple[float, float, float] = (0.70, 0.15, 0.15),
+    seed: int = 42,
+) -> dict[str, Split]:
+    """video_id -> split, ignoring channels. Stratified by label: each label's videos are
+    shuffled (seeded) and cut by `proportions`, so every split keeps ~the overall up/down
+    ratio. Deterministic given seed."""
+    names: tuple[Split, Split, Split] = ("train", "val", "test")
+    by_label: dict[str, list[str]] = {}
+    for video_id, (_channel_id, label) in sorted(canonical.items()):
+        by_label.setdefault(label, []).append(video_id)
+
+    rng = random.Random(seed)
+    assignment: dict[str, Split] = {}
+    for label in sorted(by_label):
+        video_ids = by_label[label]
+        rng.shuffle(video_ids)
+        n = len(video_ids)
+        train_end = round(n * proportions[0])
+        val_end = round(n * (proportions[0] + proportions[1]))
+        for i, video_id in enumerate(video_ids):
+            assignment[video_id] = names[0 if i < train_end else 1 if i < val_end else 2]
+    return assignment
 
 
 def assign_channels_to_splits(

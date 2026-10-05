@@ -38,7 +38,12 @@ from sloppy.label.pool import (
     sample_channel_batches,
     sample_pool,
 )
-from sloppy.label.split import assign_channels_to_splits, canonical_labels, channel_stats
+from sloppy.label.split import (
+    assign_channels_to_splits,
+    assign_videos_to_splits,
+    canonical_labels,
+    channel_stats,
+)
 from sloppy.models.ablation import format_ablation_table
 from sloppy.models.evaluate import BinaryMetrics, evaluate
 from sloppy.models.report import top_errors
@@ -718,8 +723,17 @@ def make_splits(
     out_csv: Path = typer.Option(DEFAULT_SPLITS_CSV),  # noqa: B008
     proportions: str = typer.Option("0.70,0.15,0.15"),
     seed: int = typer.Option(42),
+    group_by: str = typer.Option(
+        "video",
+        help="'video' (default): label-stratified random split by video, ignoring channels "
+        "(a channel's videos can span train and test - inflates metrics). 'channel': whole "
+        "channels per split, the honest generalization check.",
+    ),
 ) -> None:
-    """Write a channel-grouped, stratified train/val/test split to a CSV artifact."""
+    """Write a stratified train/val/test split to a CSV artifact."""
+    if group_by not in ("video", "channel"):
+        typer.secho(f"[FAIL] --group-by must be 'video' or 'channel', got {group_by!r}", fg="red")
+        raise typer.Exit(1)
     parts = tuple(float(p) for p in proportions.split(","))
     if len(parts) != 3 or abs(sum(parts) - 1.0) > 1e-6:
         typer.secho(
@@ -736,24 +750,34 @@ def make_splits(
         typer.secho("No non-skip labels found yet - nothing to split.", fg="yellow")
         raise typer.Exit(1)
 
-    stats = channel_stats(canonical)
-    channel_split = assign_channels_to_splits(stats, proportions=parts, seed=seed)
+    if group_by == "video":
+        video_split = assign_videos_to_splits(canonical, proportions=parts, seed=seed)
+    else:
+        channel_split = assign_channels_to_splits(
+            channel_stats(canonical), proportions=parts, seed=seed
+        )
+        video_split = {vid: channel_split[cid] for vid, (cid, _label) in canonical.items()}
 
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     with out_csv.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["video_id", "channel_id", "label", "split"])
         for video_id, (channel_id, label) in sorted(canonical.items()):
-            writer.writerow([video_id, channel_id, label, channel_split[channel_id]])
+            writer.writerow([video_id, channel_id, label, video_split[video_id]])
 
     split_counts: dict[str, int] = {}
-    for channel_id, _label in canonical.values():
-        split_name = channel_split[channel_id]
+    down_counts: dict[str, int] = {}
+    for video_id, (_channel_id, label) in canonical.items():
+        split_name = video_split[video_id]
         split_counts[split_name] = split_counts.get(split_name, 0) + 1
+        down_counts[split_name] = down_counts.get(split_name, 0) + (label == "down")
 
     typer.secho(f"Wrote {len(canonical)} labeled video(s) to {out_csv}", bold=True)
     for name in ("train", "val", "test"):
-        typer.echo(f"  {name}: {split_counts.get(name, 0)}")
+        total = split_counts.get(name, 0)
+        down = down_counts.get(name, 0)
+        share = f"{down / total:.0%}" if total else "n/a"
+        typer.echo(f"  {name}: {total} ({down} down, {share})")
 
 
 @label_app.command("stats")
