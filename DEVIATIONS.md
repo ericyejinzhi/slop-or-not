@@ -50,20 +50,23 @@ the roadmap didn't anticipate.
 
 ## Phases 2-3 - first real-data run (2026-10-05)
 
-### Train/val/test split is per-video, not grouped by channel
+### A per-video split option was added, tried briefly as the default, and reverted
 
 - **Intended**: ROADMAP.md Phase 2: "Stratified train/val/test split, grouped by channel -
   never let one channel's videos span train and test, or the model will just memorize
   channels."
-- **Actual**: `slop label make-splits` defaults to `--group-by video` (label-stratified
-  random split, ignoring channels). The channel-grouped split remains available as
-  `--group-by channel`.
-- **Why**: the project moved to channel-batch labeling (one judgment per channel), and the
-  decision was that labeling should be per channel while training should not group by it.
-- **Follow-up**: with channel-level labels, a by-video split leaks channel identity into
-  the test set, so metrics are inflated (first real XGBoost run: PR-AUC about 0.98-0.99).
-  Re-run training and evaluation with `--group-by channel` before quoting any number
-  externally. See `docs/writeups/phase-3/real-data-first-run.md`.
+- **Actual**: `slop label make-splits` gained `--group-by video` (label-stratified random
+  split ignoring channels). It was the default on 2026-10-05, because the plan was per-channel
+  labels but ungrouped training. The first real run showed why that is a problem (below), so
+  on 2026-10-06 the default went back to `--group-by channel`, matching the roadmap. The
+  per-video option stays, only to measure the leakage gap.
+- **Why it was reverted**: with channel-level labels, a by-video split leaks channel identity
+  into the test set. The first real XGBoost run scored PR-AUC about 0.98-0.99 on by-video
+  splits; see `docs/writeups/phase-3/real-data-first-run.md` and
+  `docs/writeups/phase-3/cross-validation.md` for the channel-grouped comparison.
+- **Follow-up**: none for the default. `slop model cv` (stratified k-fold grouped by channel)
+  was added as the primary way to estimate performance, since a single val/test split of
+  about 8-9 channels is very noisy.
 
 ### Sentiment scoring truncates comments at 512 tokens
 

@@ -45,6 +45,7 @@ from sloppy.label.split import (
     channel_stats,
 )
 from sloppy.models.ablation import format_ablation_table
+from sloppy.models.cv import GROUP_BY_CHOICES, cross_validate
 from sloppy.models.evaluate import BinaryMetrics, evaluate
 from sloppy.models.report import top_errors
 from sloppy.models.scores import upsert_video_score
@@ -724,10 +725,11 @@ def make_splits(
     proportions: str = typer.Option("0.70,0.15,0.15"),
     seed: int = typer.Option(42),
     group_by: str = typer.Option(
-        "video",
-        help="'video' (default): label-stratified random split by video, ignoring channels "
-        "(a channel's videos can span train and test - inflates metrics). 'channel': whole "
-        "channels per split, the honest generalization check.",
+        "channel",
+        help="'channel' (default): whole channels per split, so no channel spans train and "
+        "test - the honest generalization check, and the right choice while labels are "
+        "per channel. 'video': label-stratified random split by video, ignoring channels "
+        "(a channel's videos can span train and test - inflates metrics).",
     ),
 ) -> None:
     """Write a stratified train/val/test split to a CSV artifact."""
@@ -911,6 +913,100 @@ def _print_metrics(label: str, m: BinaryMetrics) -> None:
     typer.echo(
         f"  {label}: n={m.n} pr_auc={pr_auc} f1={m.f1:.3f} tp={m.tp} fp={m.fp} tn={m.tn} fn={m.fn}"
     )
+
+
+@model_app.command("cv")
+def cv_command(
+    model: str = typer.Option("both", help="'logistic_regression', 'xgboost', or 'both'"),
+    folds: int = typer.Option(5, help="Number of folds (k)"),
+    repeats: int = typer.Option(
+        1,
+        help="Repeat the whole k-fold with different channel partitions (seed + repeat). "
+        "More repeats = steadier numbers, since there are only ~60 channels to partition.",
+    ),
+    seed: int = typer.Option(42),
+    group_by: str = typer.Option(
+        "channel",
+        help="'channel' (default): StratifiedGroupKFold - each channel stays entirely in one "
+        "fold, label ratio balanced across folds. 'video': plain StratifiedKFold, which "
+        "leaks channel identity (only for measuring that gap).",
+    ),
+    feature_group: str = typer.Option(
+        "all", help=f"Feature set: one of {', '.join(FEATURE_GROUPS)} (see `slop model ablation`)"
+    ),
+) -> None:
+    """Stratified k-fold cross-validation over every non-skip labeled video, grouped by
+    channel. Replaces a single noisy val/test split with k held-out folds, so the number
+    reflects performance on channels the model never trained on. Reads labels and features
+    straight from the database (no splits.csv) and writes nothing - no models are saved
+    and video_scores is not touched."""
+    if model != "both" and model not in MODEL_NAMES:
+        typer.secho(
+            f"[FAIL] --model must be 'both' or one of {MODEL_NAMES}, got {model!r}", fg="red"
+        )
+        raise typer.Exit(1)
+    if group_by not in GROUP_BY_CHOICES:
+        typer.secho(
+            f"[FAIL] --group-by must be one of {GROUP_BY_CHOICES}, got {group_by!r}", fg="red"
+        )
+        raise typer.Exit(1)
+    if feature_group not in FEATURE_GROUPS:
+        typer.secho(
+            f"[FAIL] --feature-group must be one of {tuple(FEATURE_GROUPS)}, got {feature_group!r}",
+            fg="red",
+        )
+        raise typer.Exit(1)
+
+    with session_scope() as session:
+        canonical = canonical_labels(session)
+        if not canonical:
+            typer.secho("No non-skip labels found yet - nothing to cross-validate.", fg="yellow")
+            raise typer.Exit(1)
+        df = assemble_dataset(
+            session,
+            {vid: (channel_id, label, "cv") for vid, (channel_id, label) in canonical.items()},
+        )
+
+    numeric_features, categorical_features = FEATURE_GROUPS[feature_group]
+    n_channels = df["channel_id"].nunique()
+    typer.secho(
+        f"{len(df)} labeled video(s) from {n_channels} channel(s); {folds}-fold x {repeats} "
+        f"repeat(s), group_by={group_by}, features={feature_group}",
+        bold=True,
+    )
+
+    model_names = MODEL_NAMES if model == "both" else (model,)
+    for model_name in model_names:
+        try:
+            with cli_ui.spinner(f"Cross-validating {model_name}..."):
+                result = cross_validate(
+                    df,
+                    model_name,
+                    n_splits=folds,
+                    seed=seed,
+                    repeats=repeats,
+                    group_by=group_by,
+                    numeric_features=numeric_features,
+                    categorical_features=categorical_features,
+                )
+        except ValueError as exc:
+            cli_ui.fail(f"{model_name}: {exc}")
+            raise typer.Exit(1) from exc
+
+        typer.secho(f"\n{model_name}", bold=True)
+        for fold in result.folds:
+            _print_metrics(
+                f"r{fold.repeat} fold {fold.fold} ({fold.n_test_channels} ch)",
+                fold.report.overall,
+            )
+
+        typer.echo("  across folds (mean +/- std, [min, max]):")
+        for row in result.summary().itertuples():
+            typer.echo(
+                f"    {row.who:<8} {row.metric:<6} {row.mean:.3f} +/- {row.std:.3f}  "
+                f"[{row.min:.3f}, {row.max:.3f}]"
+            )
+        _print_metrics("pooled out-of-fold", result.pooled())
 
 
 @model_app.command("evaluate")

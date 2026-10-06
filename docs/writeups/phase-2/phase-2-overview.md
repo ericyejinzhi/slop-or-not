@@ -4,7 +4,7 @@ This covers the whole of Phase 2 end-to-end. For stage-by-stage detail, see `sta
 
 ## What is being implemented
 
-Everything needed to turn Phase 1's raw ingested corpus into a labeled training set: a written definition of "slop" (`docs/rubric.md`), a `labels` table, tooling to bulk-ingest a hand-curated channel list, a pool-selection mechanism enforcing the roadmap's corpus-shape rules, a keyboard-driven labeling CLI, and a stratified train/val/test split (per-video by default, channel-grouped optionally).
+Everything needed to turn Phase 1's raw ingested corpus into a labeled training set: a written definition of "slop" (`docs/rubric.md`), a `labels` table, tooling to bulk-ingest a hand-curated channel list, a pool-selection mechanism enforcing the roadmap's corpus-shape rules, a keyboard-driven labeling CLI, and a stratified, channel-grouped train/val/test split (with an optional per-video mode).
 
 Built across seven stages:
 
@@ -13,7 +13,7 @@ Built across seven stages:
 3. **Seed-channel tooling** (`slop ingest seed-channels`, `slop label seed-status`) - bulk-ingests your curated `data/seed_channels.csv` via Phase 1's existing pipeline, and cross-checks it against what's actually in the DB.
 4. **Pool selection** (`src/sloppy/label/pool.py`, `slop label pool-preview`) - enforces "recent uploads only, >=15/<=30 per channel, wide-and-shallow" at query time.
 5. **The labeling CLI** (`src/sloppy/label/keyboard.py`, `display.py`, `labels.py`, `slop label run`) - the actual keyboard-driven tool.
-6. **Train/val/test split** (`src/sloppy/label/split.py`, `slop label make-splits`) - dependency-free, writes `data/splits.csv`. Per-video, label-stratified by default since 2026-10-05 (`--group-by video`); the original channel-grouped split is `--group-by channel` (see stage 6's update section).
+6. **Train/val/test split** (`src/sloppy/label/split.py`, `slop label make-splits`) - dependency-free, writes `data/splits.csv`. Channel-grouped by default (`--group-by channel`); an optional label-stratified per-video split (`--group-by video`) exists but leaks channel identity (see stage 6's update section).
 7. **Distribution + consistency tooling** (`slop label stats`, `--mode consistency`) - closes out the roadmap's own verify bullet.
 
 ## Architecture, end to end
