@@ -14,6 +14,13 @@ Two `@flow`-decorated functions:
 - `refresh_channel_flow(id_or_handle)` - calls the 4 tasks **strictly in sequence** (each depends on the previous step's data existing - there's nothing to compute NLP features for until videos are ingested), returning a small summary dict.
 - `refresh_all_tracked_channels_flow(seed_channels_csv=data/seed_channels.csv)` - reads the `handle` column from Phase 2's seed-channels CSV (the confirmed choice for Phase 7's "tracked channels" list) and calls `refresh_channel_flow` once per handle, sequentially (channel ingestion is YouTube-quota-bound, so concurrency here would only burn through quota faster, not finish sooner). Returns `[]` gracefully if the CSV is missing or has no data rows yet - both real, current states of this project.
 
+## Update 2026-10-06 - capped ingest, shared steps, and a scoring bug fix
+
+- `ingest_channel_task` used to call `ingest_channel` with no limit, which pulls a channel's entire upload history. It now calls `sloppy.refresh.ingest_channel_sampled`: the default random 10-video sample of the 75 most recent uploads (same default as the CLI and `POST /ingest`).
+- The ingest-sampling and scoring steps moved into a plain module, `src/sloppy/refresh.py`, shared with the API's `POST /ingest` so both do the same thing. `score_channel_task` now calls `score_with_active_model`, and `channel_video_ids` replaced the private `_channel_video_ids` (tests monkeypatch the new locations).
+- Bug fixed: scoring wrote `split="live"` for every video it scored, so refreshing a labeled channel overwrote the `train`/`val`/`test` split recorded in `video_scores` for the active model, which `slop model evaluate` reads. `upsert_video_score` gained `preserve_split`, which `score_videos` now uses: an existing row's score and label are updated but its split is kept; a new row still gets `live`.
+- Note for the daily refresh: since ingest is now a random sample each run, a refresh adds up to 10 more videos from the channel's recent uploads rather than guaranteeing the newest ones; pass a most-recent-N cap if "latest uploads only" is wanted.
+
 ## What it should look like
 
 ```python

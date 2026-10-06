@@ -166,6 +166,8 @@ export interface LabeledVideoListResponse {
 export interface IngestRequest {
   channel?: string | null
   video_id?: string | null
+  // Channel ingests only. Unset = a random 10-video sample; set = the N most recent.
+  max_videos?: number | null
 }
 
 export interface IngestResponse {

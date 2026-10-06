@@ -11,27 +11,22 @@ from pathlib import Path
 from prefect import flow, task
 
 from sloppy.config import get_settings
-from sloppy.db.models import Video
-from sloppy.db.session import session_scope
 from sloppy.features.pipeline import compute_nlp_features, compute_vision_features
-from sloppy.ingest.pipeline import ingest_channel
-from sloppy.models.scoring import score_videos
+from sloppy.refresh import (
+    channel_video_ids,
+    ingest_channel_sampled,
+    score_with_active_model,
+)
 
 DEFAULT_SEED_CHANNELS_CSV = Path("data/seed_channels.csv")
-DEFAULT_MODEL_ARTIFACTS_DIR = Path("models_artifacts")
-
-
-def _channel_video_ids(channel_id: str) -> list[str]:
-    with session_scope() as session:
-        rows = session.query(Video.id).filter(Video.channel_id == channel_id).all()
-    return [row[0] for row in rows]
 
 
 @task(retries=3, retry_delay_seconds=30, log_prints=True)
 def ingest_channel_task(id_or_handle: str) -> str:
     """Returns the resolved channel id (ingest_channel resolves a handle to one)."""
     settings = get_settings()
-    summary = ingest_channel(settings, id_or_handle)
+    # Capped (default random sample), never a channel's whole history - see refresh.py.
+    summary = ingest_channel_sampled(settings, id_or_handle)
     print(
         f"Ingested channel {summary.channel_id}: {summary.videos_upserted} video(s), "
         f"{summary.comments_upserted} comment(s), {summary.thumbnails_upserted} thumbnail(s), "
@@ -60,20 +55,11 @@ def compute_vision_task(channel_id: str) -> list[str]:
 @task(retries=2, retry_delay_seconds=30, log_prints=True)
 def score_channel_task(channel_id: str) -> list[str]:
     settings = get_settings()
-    if not settings.active_model_name or not settings.active_model_version:
-        print("No active model configured (ACTIVE_MODEL_NAME/VERSION unset) - skipping scoring.")
+    scored, skipped = score_with_active_model(settings, channel_video_ids(channel_id))
+    if skipped is not None:
+        print(f"Skipping scoring for {channel_id}: {skipped}")
         return []
 
-    video_ids = _channel_video_ids(channel_id)
-    if not video_ids:
-        return []
-
-    scored = score_videos(
-        video_ids=video_ids,
-        model_name=settings.active_model_name,
-        model_version=settings.active_model_version,
-        artifacts_dir=DEFAULT_MODEL_ARTIFACTS_DIR,
-    )
     print(f"Scored {len(scored)} video(s) in {channel_id}")
     return scored
 

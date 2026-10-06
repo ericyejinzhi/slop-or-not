@@ -10,6 +10,7 @@ tests/test_features_pipeline.py, tests/test_model_scoring.py).
 
 import pytest
 
+from sloppy import refresh as refresh_module
 from sloppy.config import Settings
 from sloppy.flows import refresh
 from sloppy.ingest.pipeline import IngestSummary
@@ -18,7 +19,7 @@ from sloppy.ingest.pipeline import IngestSummary
 def test_ingest_channel_task_returns_resolved_channel_id(monkeypatch):
     monkeypatch.setattr(
         refresh,
-        "ingest_channel",
+        "ingest_channel_sampled",
         lambda settings, target: IngestSummary(
             channel_id="UC_x", videos_upserted=2, comments_upserted=0, thumbnails_upserted=0
         ),
@@ -26,8 +27,24 @@ def test_ingest_channel_task_returns_resolved_channel_id(monkeypatch):
     assert refresh.ingest_channel_task.fn("@somechannel") == "UC_x"
 
 
+def test_ingest_channel_task_is_capped_not_the_whole_channel_history(monkeypatch):
+    # Regression: the flow used to call ingest_channel with no limit/sample, which pulls a
+    # channel's entire upload history.
+    captured = {}
+    monkeypatch.setattr(
+        refresh_module,
+        "ingest_channel",
+        lambda settings, target, **kw: captured.update(kw) or IngestSummary(channel_id="UC_x"),
+    )
+    monkeypatch.setattr(refresh, "get_settings", lambda: Settings(_env_file=None))
+
+    refresh.ingest_channel_task.fn("@somechannel")
+
+    assert captured and ("limit" in captured or "sample_size" in captured)
+
+
 def test_ingest_channel_task_raises_when_channel_id_unresolved(monkeypatch):
-    monkeypatch.setattr(refresh, "ingest_channel", lambda settings, target: IngestSummary())
+    monkeypatch.setattr(refresh, "ingest_channel_sampled", lambda settings, target: IngestSummary())
     with pytest.raises(ValueError, match="did not resolve"):
         refresh.ingest_channel_task.fn("@bad-handle")
 
@@ -64,8 +81,9 @@ def test_compute_vision_task_scopes_to_channel_and_only_missing(monkeypatch):
 
 def test_score_channel_task_skips_when_no_active_model(monkeypatch):
     monkeypatch.setattr(refresh, "get_settings", lambda: Settings(_env_file=None))
+    monkeypatch.setattr(refresh, "channel_video_ids", lambda channel_id: ["v1"])
     calls = []
-    monkeypatch.setattr(refresh, "score_videos", lambda **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(refresh_module, "score_videos", lambda **kwargs: calls.append(kwargs))
 
     result = refresh.score_channel_task.fn("UC_x")
 
@@ -79,9 +97,9 @@ def test_score_channel_task_returns_empty_when_channel_has_no_videos(monkeypatch
         "get_settings",
         lambda: Settings(_env_file=None, active_model_name="xgboost", active_model_version="v1"),
     )
-    monkeypatch.setattr(refresh, "_channel_video_ids", lambda channel_id: [])
+    monkeypatch.setattr(refresh, "channel_video_ids", lambda channel_id: [])
     calls = []
-    monkeypatch.setattr(refresh, "score_videos", lambda **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(refresh_module, "score_videos", lambda **kwargs: calls.append(kwargs))
 
     result = refresh.score_channel_task.fn("UC_x")
 
@@ -95,14 +113,14 @@ def test_score_channel_task_scores_when_active_model_is_set(monkeypatch):
         "get_settings",
         lambda: Settings(_env_file=None, active_model_name="xgboost", active_model_version="v1"),
     )
-    monkeypatch.setattr(refresh, "_channel_video_ids", lambda channel_id: ["v1", "v2"])
+    monkeypatch.setattr(refresh, "channel_video_ids", lambda channel_id: ["v1", "v2"])
     captured = {}
 
     def fake_score_videos(**kwargs):
         captured.update(kwargs)
         return ["v1", "v2"]
 
-    monkeypatch.setattr(refresh, "score_videos", fake_score_videos)
+    monkeypatch.setattr(refresh_module, "score_videos", fake_score_videos)
 
     result = refresh.score_channel_task.fn("UC_x")
 

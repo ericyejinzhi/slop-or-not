@@ -6,6 +6,10 @@ A small form, `web/src/components/IngestForm.tsx`, mounted at the top of `VideoG
 
 Since Phase 5's `POST /ingest` is fire-and-forget with no job-status tracking (a confirmed, deliberate design decision from that phase), the form's "success" state is honest about what it actually knows: submitting shows "Ingestion started for {target}. This runs in the background - check back in a bit." - not a progress bar, not "done," because the frontend genuinely has no way to know when (or whether) the background task finishes. Typing again after a result is shown clears that message (`reset()` on the mutation), so a second submission doesn't leave a stale success/error message hanging around next to a new attempt.
 
+## Update 2026-10-06
+
+The success message now says the work happens in stages (fetched, then analyzed and scored, which can take a few minutes) and suggests reloading to see new scores, because `POST /ingest` now runs features and scoring after ingesting (see `phase-5/stage-6-ingest-and-labels-routers.md`). `IngestRequest` gained an optional `max_videos`; the form does not expose it yet.
+
 ## What it should look like
 
 ```

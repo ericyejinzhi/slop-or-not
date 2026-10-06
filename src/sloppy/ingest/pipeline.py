@@ -34,6 +34,13 @@ logger = logging.getLogger(__name__)
 COMMENTS_PER_VIDEO = 100
 VIDEO_BATCH_SIZE = 50
 
+# The project's default channel sample (channel-batch labeling methodology): a random
+# DEFAULT_SAMPLE_SIZE of a channel's DEFAULT_SAMPLE_WINDOW most-recent uploads. The CLI,
+# the API's POST /ingest and the refresh flow all share it, so no entry point defaults to
+# ingesting a channel's entire (potentially thousands-of-videos) history.
+DEFAULT_SAMPLE_WINDOW = 75
+DEFAULT_SAMPLE_SIZE = 10
+
 
 @dataclass
 class IngestSummary:

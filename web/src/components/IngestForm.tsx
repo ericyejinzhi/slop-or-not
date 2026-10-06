@@ -40,8 +40,9 @@ export function IngestForm() {
       </button>
       {isSuccess && data && (
         <p className="w-full text-sm text-green-700">
-          Ingestion started for {data.target}. This runs in the background - check back in a
-          bit.
+          Ingestion started for {data.target}. It runs in the background: videos are fetched
+          first, then analyzed and scored, which can take a few minutes - reload to see new
+          scores.
         </p>
       )}
       {isError && (

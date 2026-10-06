@@ -19,7 +19,13 @@ def upsert_video_score(
     score: float,
     predicted_label: str,
     split: str,
+    preserve_split: bool = False,
 ) -> None:
+    """`preserve_split=True` means: if a row for this (video, model, version) already
+    exists, update its score/label but leave its `split` alone - used when scoring with an
+    already-trained model, so a labeled video's train/val/test membership recorded at
+    training time (which `slop model evaluate` reads) isn't overwritten with "live".
+    """
     stmt = insert(VideoScore).values(
         video_id=video_id,
         model_name=model_name,
@@ -34,6 +40,8 @@ def upsert_video_score(
         "split": stmt.excluded.split,
         "updated_at": func.now(),
     }
+    if preserve_split:
+        del update_cols["split"]
     session.execute(
         stmt.on_conflict_do_update(
             index_elements=["video_id", "model_name", "model_version"], set_=update_cols

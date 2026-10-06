@@ -8,6 +8,15 @@ Two write-path endpoints: `POST /ingest` (`src/sloppy/api/routers/ingest.py`) an
 
 `POST /labels` takes a `LabelCreateRequest` (`video_id`, `labeler: str | None`, `label: Literal["up","down","skip"]`, `notes: str | None`). It resolves `labeler = request.labeler or Settings.labeler_name`, returning `400` if still empty (mirroring the CLI's own ad hoc check, since `record_label` itself validates nothing). It does an explicit `session.get(Video, request.video_id) is None` check, returning `404` for a video that doesn't exist - simpler and more precise than trying to parse a `IntegrityError`'s message for the FK-violation case. It then calls the existing `record_label(...)` and returns `201` with a `LabelResponse` built from the input plus a locally-generated `created_at` (since `record_label` itself returns `None`).
 
+## Update 2026-10-06 - POST /ingest now refreshes (ingest, features, score) and is capped
+
+The first end-to-end test on real data found that this endpoint only ingested: new videos had no NLP/vision features and no score, so the dashboard showed `score: null` indefinitely, and a channel ingest pulled the channel's entire upload history (hundreds of videos for a big channel). Both fixed:
+
+- The background task is now `sloppy.refresh.refresh_channel` / `refresh_video` (new `src/sloppy/refresh.py`): ingest, then `compute_nlp_features` and `compute_vision_features` (only missing), then score with the active model (`ACTIVE_MODEL_NAME`/`ACTIVE_MODEL_VERSION`; with none set it ingests and computes features but skips scoring, and says so in the log).
+- Channel ingests are capped: by default a random 10-video sample of the 75 most recent uploads (the same default as the CLI, constants in `ingest/pipeline.py`), or the N most recent if the request sets the new optional `max_videos` (1-100, channel ingests only).
+- Refreshes are serialized with a lock, since the NLP and CLIP models are large and the work is CPU-bound, and a failing background refresh is logged with its traceback instead of vanishing.
+- Still fire-and-forget with no job status: scores appear a few minutes later (the first refresh after an API restart also pays to load the models), so reload the page to see them.
+
 ## What it should look like
 
 ```

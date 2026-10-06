@@ -7,7 +7,7 @@ instead, since no single ORM object represents them.
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class NlpFeatureBreakdown(BaseModel):
@@ -131,11 +131,16 @@ class ChannelBatchPoolResponse(BaseModel):
 class IngestRequest(BaseModel):
     channel: str | None = None
     video_id: str | None = None
+    # Channel ingests are always capped. Unset = the project's default random sample (see
+    # ingest.pipeline.DEFAULT_SAMPLE_*); set = the N most-recent uploads instead.
+    max_videos: int | None = Field(default=None, ge=1, le=100)
 
     @model_validator(mode="after")
     def _exactly_one_target(self) -> "IngestRequest":
         if (self.channel is None) == (self.video_id is None):
             raise ValueError("Provide exactly one of 'channel' or 'video_id'")
+        if self.max_videos is not None and self.channel is None:
+            raise ValueError("'max_videos' only applies to a 'channel' ingest")
         return self
 
 

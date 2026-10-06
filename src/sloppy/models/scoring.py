@@ -61,6 +61,7 @@ def score_videos(
                 score=score,
                 predicted_label=predicted_label,
                 split=split,
+                preserve_split=True,
             )
             scored_ids.append(row["video_id"])
 

@@ -14,7 +14,7 @@ from sloppy.db.session import session_scope
 from sloppy.features.dataset import assemble_dataset, load_splits
 from sloppy.features.pipeline import compute_nlp_features, compute_vision_features
 from sloppy.flows.refresh import refresh_all_tracked_channels_flow, refresh_channel_flow
-from sloppy.ingest.pipeline import ingest_channel
+from sloppy.ingest.pipeline import DEFAULT_SAMPLE_SIZE, DEFAULT_SAMPLE_WINDOW, ingest_channel
 from sloppy.ingest.thumbnails import (
     download_thumbnail_bytes,
     extract_thumbnail_url,
@@ -236,13 +236,14 @@ def run_channel_ingest(
         "below. Unset = sampled selection (the project's current default methodology).",
     ),
     sample_window: int = typer.Option(
-        75,
+        DEFAULT_SAMPLE_WINDOW,
         help="Ignored if --max-videos is set. Randomly sample from the N most-recent "
         "videos, instead of always taking the exact same most-recent ones - channel-"
         "batch labeling wants a representative sample, not just the latest uploads.",
     ),
     sample_size: int = typer.Option(
-        10, help="Ignored if --max-videos is set. How many videos to randomly sample."
+        DEFAULT_SAMPLE_SIZE,
+        help="Ignored if --max-videos is set. How many videos to randomly sample.",
     ),
 ) -> None:
     """Ingest a channel end-to-end: videos, comments, thumbnails. Safe to re-run (upserts)."""
@@ -300,10 +301,12 @@ def ingest_seed_channels(
         "channel, not always the exact same most-recent N).",
     ),
     sample_window: int = typer.Option(
-        75, help="Ignored if --max-videos-per-channel is set. See `slop ingest channel --help`."
+        DEFAULT_SAMPLE_WINDOW,
+        help="Ignored if --max-videos-per-channel is set. See `slop ingest channel --help`.",
     ),
     sample_size: int = typer.Option(
-        10, help="Ignored if --max-videos-per-channel is set. See `slop ingest channel --help`."
+        DEFAULT_SAMPLE_SIZE,
+        help="Ignored if --max-videos-per-channel is set. See `slop ingest channel --help`.",
     ),
     force: bool = typer.Option(
         False,
