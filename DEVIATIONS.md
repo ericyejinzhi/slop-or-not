@@ -47,3 +47,31 @@ the roadmap didn't anticipate.
 - **Intended**: roadmap assumed uv available.
 - **Actual**: installed `astral-sh.uv` 0.12.15 via winget during Phase 0.
 - **Follow-up**: only terminals opened after the install have `uv` on PATH.
+
+## Phases 2-3 - first real-data run (2026-10-05)
+
+### A per-video split option was added, tried briefly as the default, and reverted
+
+- **Intended**: ROADMAP.md Phase 2: "Stratified train/val/test split, grouped by channel -
+  never let one channel's videos span train and test, or the model will just memorize
+  channels."
+- **Actual**: `slop label make-splits` gained `--group-by video` (label-stratified random
+  split ignoring channels). It was the default on 2026-10-05, because the plan was per-channel
+  labels but ungrouped training. The first real run showed why that is a problem (below), so
+  on 2026-10-06 the default went back to `--group-by channel`, matching the roadmap. The
+  per-video option stays, only to measure the leakage gap.
+- **Why it was reverted**: with channel-level labels, a by-video split leaks channel identity
+  into the test set. The first real XGBoost run scored PR-AUC about 0.98-0.99 on by-video
+  splits; see `docs/writeups/phase-3/real-data-first-run.md` and
+  `docs/writeups/phase-3/cross-validation.md` for the channel-grouped comparison.
+- **Follow-up**: none for the default. `slop model cv` (stratified k-fold grouped by channel)
+  was added as the primary way to estimate performance, since a single val/test split of
+  about 8-9 channels is very noisy.
+
+### Sentiment scoring truncates comments at 512 tokens
+
+- **Intended**: the roadmap does not mention it; the stage 5 implementation scored comments
+  untruncated.
+- **Actual**: `score_comments` passes `truncation=True, max_length=512`.
+- **Why**: real comments over the RoBERTa limit crashed `compute-nlp`.
+- **Follow-up**: none; only the first 512 tokens of a very long comment influence its score.

@@ -68,12 +68,19 @@ from day one" design goal.
 
 ## Results
 
-**No real videos have been labeled yet.** Every phase above was built and tested against
-synthetic fixtures and real infrastructure (Postgres, MinIO, the real pretrained
-ML models) - genuinely end-to-end, just not against real YouTube data, which is still
-blocked on the manual steps tracked in [docs/writeups/TODO.md](docs/writeups/TODO.md)
-(a YouTube API key, curating a seed channel list, and ~300-500 hours-long labeling
-sessions). Once real labels exist:
+**A first real-data result exists, and it is modest.** As of 2026-10-06 the pipeline has run
+end to end on real YouTube data: 60 channels, 626 videos, 646 channel-level labels (about
+32% slop), then splits, NLP and vision features, and both baseline models. The honest
+estimate, from stratified k-fold cross-validation grouped by channel (so every test channel
+is one the model never trained on): PR-AUC 0.59 +/- 0.13 for XGBoost and 0.60 +/- 0.09 for
+logistic regression, against a majority-class baseline of 0.31 (F1 about 0.5 for both models,
+0 for the baseline). That is real signal on unseen channels, but noisy and far from
+reliable, with only about 58 labeled channels behind it. An earlier by-video split scored
+XGBoost at PR-AUC 0.99; that figure was inflated by channel leakage (labels are per channel,
+so the model could just recognize channels) and should be ignored. Details:
+[docs/writeups/phase-3/cross-validation.md](docs/writeups/phase-3/cross-validation.md) and
+[docs/writeups/phase-3/real-data-first-run.md](docs/writeups/phase-3/real-data-first-run.md).
+Still to come:
 
 - An ablation table (metadata-only vs. +text vs. +full feature set, via
   `slop model ablation`) will go here, following the format documented in

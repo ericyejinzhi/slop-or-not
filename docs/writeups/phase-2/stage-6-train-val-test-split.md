@@ -1,4 +1,4 @@
-# Phase 2, Stage 6 - Train/val/test split (channel-grouped, dependency-free)
+# Phase 2, Stage 6 - Train/val/test split (channel-grouped by default, dependency-free)
 
 ## What is being implemented
 
@@ -8,6 +8,22 @@
 - `channel_stats()` - per-channel up/down counts.
 - `assign_channels_to_splits()` - a seeded greedy algorithm that assigns *whole channels* to train/val/test, never splitting one channel's videos across sets, while targeting both a size proportion (default 70/15/15) and the corpus's overall up/down ratio in each split.
 - `data/splits.csv` is **not committed to git** - it's mechanically reproducible from `labels` + a fixed `--seed`, unlike the hand-curated `seed_channels.csv`, and your existing `.gitignore` already covers it via the `data/*` rule.
+
+## Update 2026-10-05/06 - an optional per-video split, and channel-grouped stays the default
+
+After the first real labeling pass, `slop label make-splits` gained a `--group-by` option:
+
+- `--group-by channel` (the default): the whole-channel algorithm described below. No channel spans two splits.
+- `--group-by video`: `assign_videos_to_splits()` shuffles each label's videos with the seed and cuts them by `--proportions`, so each split keeps about the overall up/down ratio. Channels are ignored - one channel's videos can appear in train, val and test.
+- The command now prints each split's size and number of down labels, for example `train: 426 (133 down, 31%)`.
+
+The per-video option was made the default for about a day (2026-10-05) and then reverted to channel. Reason: labels are per channel, so every video in a channel shares the channel's label, and a by-video split leaks channel identity from train into test. The model can score well by recognizing a channel's titles, thumbnails and cadence, without learning "slop". The first real XGBoost run reached PR-AUC 0.98-0.99 on by-video splits, which is almost certainly inflated by this - see `docs/writeups/phase-3/real-data-first-run.md`. `--group-by video` is kept so that gap can be measured against the channel-grouped number.
+
+For a steadier estimate than one 15% val/test split of about 8-9 channels, use `slop model cv` (stratified k-fold grouped by channel) - see `docs/writeups/phase-3/cross-validation.md`.
+
+Real result of the by-video run on the 60-channel corpus (608 non-skip videos): train 426 / val 91 / test 91, with down share 31% / 32% / 31%.
+
+Tests: `tests/test_label_split_video.py` (full coverage, no channel grouping, stratification and proportions, determinism).
 
 ## Two real algorithm bugs found and fixed during this stage
 

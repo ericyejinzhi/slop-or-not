@@ -24,6 +24,8 @@ SentimentAggregate(sentiment_mean=0.03, sentiment_std=0.9, sentiment_negative_sh
 - The cardiffnlp checkpoint is 3-way (negative/neutral/positive); `score_comments` drops the neutral probability from the final score rather than trying to use all 3 classes as separate features - a comment classified mostly "neutral" naturally lands near 0 in the resulting `[-1, 1]` score, which is the intended behavior, not a bug.
 - `aggregate_sentiment([], [])` returns every field as `None` (except `comment_count_scored=0`) rather than raising or returning `0.0` - a video with zero scoreable comments (e.g., comments disabled) should look like "no data," not "neutral sentiment."
 
+- **Real-data bug fixed 2026-10-05: long comments crashed scoring.** The first real `slop features compute-nlp` run failed with `RuntimeError: index 514 is out of bounds for dimension 1 with size 514`: RoBERTa accepts at most 512 tokens, and `score_comments` called the pipeline without truncation, so one over-long comment killed the whole run. Synthetic and short test comments never hit it. Fixed by passing `truncation=True, max_length=512`; regression test `test_score_comments_truncates_long_inputs` (mocks the pipeline and asserts the arguments). Comments are scored on their first 512 tokens only - fine for sentiment, but a deliberately long comment's tail is ignored.
+
 ## How to run tests properly
 
 ```powershell

@@ -1,6 +1,6 @@
 # External setup TODO
 
-Everything in this list is a manual, external-to-the-codebase step - an account, a credential, or human judgment work (research, labeling) that no amount of code can do for you. Items 1 and 4 are done (a real API key, a labeler name set). Item 2 is in progress (60 of an eventual ~100-150 channels). Item 5 (actually labeling) is underway for real - 120 labels recorded so far via the web dashboard's channel-batch labeling mode, which is now the project's primary labeling methodology (see item 2 and item 5 below for why).
+Everything in this list is a manual, external-to-the-codebase step - an account, a credential, or human judgment work (research, labeling) that no amount of code can do for you. Items 1 and 4 are done (a real API key, a labeler name set). Item 2 is in progress (60 of an eventual ~100-150 channels). Items 3, 5, 6 and 7 were completed for real on 2026-10-05 against a freshly re-ingested 60-channel corpus (626 videos, 646 labels, per-channel batch labeling): splits generated, NLP + vision features computed, and both baseline models trained and evaluated. The first real results are in `docs/writeups/phase-3/real-data-first-run.md` (inflated by channel leakage - do not quote) and the honest channel-grouped cross-validation numbers are in `docs/writeups/phase-3/cross-validation.md`.
 
 For each item: what to do, why it matters, and which writeup(s) tell you exactly how to confirm you did it right - most of them end with "How to verify" pointing at a real command and real expected output already documented from testing that stage.
 
@@ -26,7 +26,7 @@ For each item: what to do, why it matters, and which writeup(s) tell you exactly
 
 ### 3. Bulk-ingest the curated channel list
 
-**Status: done for the first 34 channels (30 most-recent videos/channel); the channel-batch methodology change (item 2) means new ingestion now defaults to a random 10-video sample instead** - `uv run slop ingest seed-channels` ran for real against the original 34: 690 videos, 51,857 comments, 671 thumbnails. `ingest_seed_channels`/`ingest channel` now default to `--sample-window 75 --sample-size 10` (random sample, not most-recent-N) - pass `--max-videos-per-channel`/`--max-videos` to opt back into the old most-recent-N behavior if ever needed. Re-run `slop ingest seed-channels` to pull in the 26 newly-added channels from item 2 - it already skips the channels done so far.
+**Status: done (re-done 2026-10-05).** All ingested data was deliberately wiped (every table plus the MinIO `thumbnails` bucket) and the 60 seed channels were re-ingested from scratch with the default 10-video random sample per channel: 60 channels, 626 videos, 42,386 comments, 617 thumbnails. The old per-video labels were backed up first to `.dev-logs/labels-backup-20261002.sql` (gitignored) and were not restored, since the random samples mostly picked different videos. The original run, for the record: the first 34 channels at 30 most-recent videos/channel gave 690 videos, 51,857 comments, 671 thumbnails. New ingestion defaults to a random 10-video sample (channel-batch methodology, item 2). `ingest_seed_channels`/`ingest channel` now default to `--sample-window 75 --sample-size 10` (random sample, not most-recent-N) - pass `--max-videos-per-channel`/`--max-videos` to opt back into the old most-recent-N behavior if ever needed. Re-run `slop ingest seed-channels` to pull in the 26 newly-added channels from item 2 - it already skips the channels done so far.
 
 - Once the API key and CSV are in place: `uv run slop ingest seed-channels`.
 - **Real bug found and fixed while first attempting this**: `ingest_channel` originally pulled a channel's *entire* upload history unconditionally - several of the real channels drafted for `seed_channels.csv` (PewDiePie, Markiplier, jacksepticeye) have thousands of videos, which would have meant thousands of comment-fetch + thumbnail-download calls per channel, burning far more quota and time than intended. Fixed: `ingest_channel`/`ingest_video` gained a `limit` parameter (most-recent-N). Caught before any real ingestion ran.
@@ -43,7 +43,7 @@ For each item: what to do, why it matters, and which writeup(s) tell you exactly
 
 ### 5. Actually label videos
 
-**Status: underway for real** - 120 labels recorded so far (63 up / 55 down / 2 skip), all via the web dashboard's labeling page. Labeling is now **channel-batch by default**: `/label` shows one channel's sampled videos at a time and applies one judgment to the whole batch (`GET /labels/channel-pool` + `POST /labels/batch`). Per-video labeling is still available (the "By video" toggle on the same page, or `slop label run --mode video` in the CLI) for ad hoc exceptions, and `/labeled` lets you search for and relabel any individual video.
+**Status: done for the current 60-channel corpus (2026-10-05)** - 646 labels (428 up / 200 down / 18 skip; about 32% down, above the roadmap's 25% minority floor), all via the web dashboard's labeling page. Every non-skip video in a channel carries the channel's judgment, and two channels (`@bingingwithbabish`, `@mrbeast`) are skip-only so they drop out of training. More labeling will be needed as the seed list grows toward ~100-150 channels. Earlier status for reference: 120 labels (63 up / 55 down / 2 skip) before the re-ingest. Labeling is now **channel-batch by default**: `/label` shows one channel's sampled videos at a time and applies one judgment to the whole batch (`GET /labels/channel-pool` + `POST /labels/batch`). Per-video labeling is still available (the "By video" toggle on the same page, or `slop label run --mode video` in the CLI) for ad hoc exceptions, and `/labeled` lets you search for and relabel any individual video.
 
 - Web: open `/label` (channel mode is the default). CLI: `uv run slop label run --limit 50` (now defaults to `--mode channel`; pass `--mode video` or `--mode consistency` for the other two modes).
 - Read `docs/rubric.md` before a session - the rubric's per-video judgment calls still apply, just now applied once per channel's whole sampled batch rather than per individual video.
@@ -51,15 +51,20 @@ For each item: what to do, why it matters, and which writeup(s) tell you exactly
 
 ### 6. Generate the train/val/test split
 
-**Status: blocked on item 5.**
+**Status: done (2026-10-06), grouped by channel.** `uv run slop label make-splits` defaults to `--group-by channel`: whole channels per split, so no channel spans train and test. A `--group-by video` option (label-stratified random split ignoring channels) was added on 2026-10-05 and briefly made the default, then reverted: labels are per channel, so a by-video split leaks channel identity into the test set (see item 7 for how large the effect was). The by-video run produced 608 labeled videos, train 426 / val 91 / test 91, about 31-32% down in each.
 
-- `uv run slop label make-splits` once you have enough labels.
-- **Verify with:** `docs/writeups/phase-2/stage-6-train-val-test-split.md` - confirms no channel spans two splits and that each split's up/down ratio is close to the overall ratio.
+- **Prefer `slop model cv` for estimating performance.** With about 58 labeled channels, one 15% val/test split is only 8-9 channels and very noisy. `slop model cv` runs stratified k-fold grouped by channel instead (`docs/writeups/phase-3/cross-validation.md`).
+- **Verify with:** `docs/writeups/phase-2/stage-6-train-val-test-split.md` (see its 2026-10-05/06 update) - under `--group-by channel` no channel spans two splits; the command prints each split's size and down share.
 
 ### 7. Train and evaluate the baseline model
 
-**Status: blocked on item 6.**
+**Status: done (2026-10-05/06); the honest number is now in.** NLP features (all 626 videos, including a real-data bug fix - comments over 512 tokens crashed `compute-nlp`, now truncated) and vision features (617 videos) were computed, then both baseline models were trained and evaluated.
 
+- **Honest result (channel-grouped, `slop model cv`, 5 folds x 3 repeats, 58 channels):** XGBoost PR-AUC 0.589 +/- 0.125, F1 0.50; logistic regression PR-AUC 0.599 +/- 0.091, F1 0.54; majority baseline PR-AUC 0.312, F1 0. There is real signal on unseen channels (about double the baseline PR-AUC), but it is modest and noisy, and XGBoost has no edge over logistic regression.
+- **The first numbers were inflated by channel leakage:** on by-video splits XGBoost scored PR-AUC 0.981 val / 0.995 test (F1 0.91 / 0.90); the same model in by-video k-fold scores 0.989. Do not quote those. Details: `docs/writeups/phase-3/real-data-first-run.md` and `docs/writeups/phase-3/cross-validation.md`.
+- Not yet done: `slop model ablation` (metadata vs +text vs +vision, ideally under channel-grouped CV), scaling the logistic regression's features (it hits its iteration limit), tuning the decision threshold, the SHAP report (item 13), promoting a model to active (item 15), and anything AWS. More labeled channels would help most: there are effectively only 58 labeled examples.
+
+- Reminder: the CLI imports torch/prefect at startup, so each `slop` command takes about a minute to start, and NLP scoring of ~42k comments on CPU took over two hours. Run long commands in the background, and keep an eye on memory - one retrain was killed by the OS's low-memory protection and had to be re-run.
 - `uv run slop model train --model both`, then `uv run slop model evaluate --model-name <name> --model-version <version> --split val` (and `--split test`), then `uv run slop model report --model-name <name> --model-version <version> --split test`.
 - **Verify with:** `docs/writeups/phase-3/stage-7-model-training.md`, `stage-8-evaluation.md`, `stage-9-error-analysis.md`, and the `phase-3-overview.md`'s closing checklist. These docs already show what real output looks like on synthetic data - your real run should follow the same shape, but the actual numbers (does it beat the majority baseline "convincingly"?) are the qualitative judgment call the roadmap leaves to you.
 
@@ -109,7 +114,7 @@ For each item: what to do, why it matters, and which writeup(s) tell you exactly
 
 ### 15. Promote a trained model to active (Phase 5)
 
-**Status: not done, but not blocking** - `.env`'s `ACTIVE_MODEL_NAME`/`ACTIVE_MODEL_VERSION` are blank, and the API works completely normally without them (returns `score: null`/`predicted_label: null` on every video, which is expected/correct until a real model exists).
+**Status: done (2026-10-06)** - set to `logistic_regression` / `20261006-201143` in `.env` (trained on channel-grouped splits; chosen over XGBoost because channel-grouped CV showed them tied and logistic regression had the lower variance across folds). Artifacts live in `models_artifacts/` in the main checkout - the refresh flow loads them from a path relative to its working directory, so run flows from the repo root. Earlier note, still true if the variables are ever blank: the API works normally without them (returns `score: null`/`predicted_label: null` on every video).
 
 - Once a real model has been trained (item 7, or `slop model ablation`) and you've decided which one should be "the" model shown by default: set `ACTIVE_MODEL_NAME`/`ACTIVE_MODEL_VERSION` in `.env` to that model's exact `model_name`/`model_version` (as printed by `slop model train`/`ablation`, or queryable via `SELECT DISTINCT model_name, model_version FROM video_scores`).
 - `GET /videos` and `GET /videos/{id}` both still accept `model_name`/`model_version` query params to override this on a per-request basis (useful for comparing ablation variants without changing `.env`).
@@ -151,6 +156,19 @@ For each item: what to do, why it matters, and which writeup(s) tell you exactly
 
 - Nothing to do here - flagged so this constraint stays visible and gets re-checked if a future endpoint is ever added that touches `Comment` rows.
 - **Verify with:** `grep -n "comment" src/sloppy/api/schemas.py` - every match should be a count or a derived score, never `text`.
+
+### 20. CLI progress spinner (dev tooling, 2026-10-05)
+
+**Status: informational, nothing to set up.** Long commands (`ingest seed-channels`, `ingest channel`, `ingest trim-all`, `features compute-nlp`/`compute-vision`) show a single-line spinner via `src/sloppy/cli_ui.py`, with `[ok]`/`[warn]`/`[FAIL]`/`[skip]` result lines printed above it. It uses `rich`, which turns the live line off when output is not a terminal. Under Git Bash the shell hands Python a pipe, so the spinner is forced on when `MSYSTEM` and `TERM` are set; set `SLOP_PLAIN=1` to switch it off (do this when redirecting output to a log file, otherwise the log fills with spinner frames). Terminals whose output encoding cannot show braille characters (for example cp1252) get an ASCII spinner; set `PYTHONIOENCODING=utf-8` for the nicer one. This was written but only verified against its unit tests and a piped demo, not yet watched in an interactive terminal.
+
+### 21. First end-to-end test run on an unseen channel (2026-10-06) - findings
+
+**Status: the pipeline works; two gaps found, neither fixed yet.** With the model from item 15 promoted and the dev services up (`scripts/start-dev.sh`), `@Computerphile` (not in the seed list, so never seen in training) was ingested with the CLI's default 10-video sample, then `compute-nlp` and `compute-vision` for that channel, then scored with `score_videos` (the same function the refresh flow uses). All 10 videos were scored; `GET /videos?channel_id=...` and `GET /videos/{id}` returned scores, the active model's name and version, NLP and vision features, similar videos, and working presigned thumbnail URLs. All 10 scored as "up" (slop probability 0.002-0.016), which is plausible for an educational channel but is only one channel's worth of evidence. What was **not** exercised: the rendered dashboard in a browser (only HTTP 200 on the page and the API payloads), and a real Prefect flow run.
+
+- **Gap 1 - `POST /ingest` (the dashboard's ingest form) only ingests; it computes no features and never scores.** `src/sloppy/api/routers/ingest.py` just schedules `ingest_channel`/`ingest_video`. So "paste a channel, ingest, watch scores appear" (the roadmap's Phase 6 verify bullet) cannot work as built: new videos show `score: null` until `compute-nlp`, `compute-vision` and scoring are run separately.
+- **Gap 2 - ingestion is uncapped in both the API route and `refresh_channel_flow`.** `ingest_channel(settings, handle)` with no `limit`/sample arguments pulls a channel's whole upload history (Computerphile has 923 videos). The CLI defaults to a 10-video random sample, but the API and the Prefect flow do not, so using either on a large channel would mean hundreds of videos, comment fetches and a multi-hour NLP run. Not hit during this test only because the CLI was used for the ingest step.
+- Possible fix for both: have the API route (and the flow) default to the same sample as the CLI, and have `POST /ingest` or a follow-up job run the features and scoring steps (for example by calling the refresh flow). Not done; needs a decision on how automatic the scoring should be.
+- Also noted: when `start-dev.sh` was launched from a tool-driven shell it did not return within 3 minutes, although the API and frontend were both up and healthy by then. Not investigated (possibly the detached background processes holding the shell's output open); it is unrelated to the pipeline itself.
 
 ---
 
