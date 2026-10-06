@@ -68,12 +68,15 @@ from day one" design goal.
 
 ## Results
 
-**No real videos have been labeled yet.** Every phase above was built and tested against
-synthetic fixtures and real infrastructure (Postgres, MinIO, the real pretrained
-ML models) - genuinely end-to-end, just not against real YouTube data, which is still
-blocked on the manual steps tracked in [docs/writeups/TODO.md](docs/writeups/TODO.md)
-(a YouTube API key, curating a seed channel list, and ~300-500 hours-long labeling
-sessions). Once real labels exist:
+**A first real-data run exists, but its numbers are not yet trustworthy.** As of
+2026-10-05 the pipeline has run end to end on real YouTube data: 60 channels, 626 videos,
+646 channel-level labels (about 32% slop), then splits, NLP and vision features, and both
+baseline models. On the per-video split, XGBoost scored PR-AUC 0.98 (val) / 0.995 (test)
+against a majority baseline of about 0.31, and logistic regression 0.68 / 0.82. Because
+labels are per channel and the split ignores channels, those scores are very likely inflated
+by channel leakage; a channel-grouped re-run is still to do. Details and caveats:
+[docs/writeups/phase-3/real-data-first-run.md](docs/writeups/phase-3/real-data-first-run.md).
+Still to come:
 
 - An ablation table (metadata-only vs. +text vs. +full feature set, via
   `slop model ablation`) will go here, following the format documented in

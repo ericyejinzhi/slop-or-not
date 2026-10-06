@@ -1,4 +1,4 @@
-# Phase 2, Stage 6 - Train/val/test split (channel-grouped, dependency-free)
+# Phase 2, Stage 6 - Train/val/test split (channel-grouped or per-video, dependency-free)
 
 ## What is being implemented
 
@@ -8,6 +8,20 @@
 - `channel_stats()` - per-channel up/down counts.
 - `assign_channels_to_splits()` - a seeded greedy algorithm that assigns *whole channels* to train/val/test, never splitting one channel's videos across sets, while targeting both a size proportion (default 70/15/15) and the corpus's overall up/down ratio in each split.
 - `data/splits.csv` is **not committed to git** - it's mechanically reproducible from `labels` + a fixed `--seed`, unlike the hand-curated `seed_channels.csv`, and your existing `.gitignore` already covers it via the `data/*` rule.
+
+## Update 2026-10-05 - per-video is now the default (`--group-by`)
+
+Everything below describes the channel-grouped algorithm, which is still in the code. After the first real labeling pass the project decided that **labeling stays per channel, but training and evaluation should not group by channel**, so `slop label make-splits` gained a `--group-by` option:
+
+- `--group-by video` (the default): `assign_videos_to_splits()` shuffles each label's videos with the seed and cuts them by `--proportions`, so each split keeps about the overall up/down ratio. Channels are ignored entirely - one channel's videos can appear in train, val and test.
+- `--group-by channel`: the original whole-channel algorithm described below.
+- The command now prints each split's size and number of down labels, for example `train: 426 (133 down, 31%)`.
+
+Real result on the 60-channel corpus (608 non-skip videos): train 426 / val 91 / test 91, with down share 31% / 32% / 31%.
+
+**What to look out for:** every video in a channel shares the channel's label, so a by-video split leaks channel identity from train into test. The model can score well by recognizing a channel's titles, thumbnails and cadence, without learning "slop". The first real XGBoost run reached PR-AUC 0.98-0.99 on these splits, which is almost certainly inflated by this - see `docs/writeups/phase-3/real-data-first-run.md`. Use `--group-by channel` for an honest generalization estimate. This overrides the roadmap's "never let one channel's videos span train and test" rule, recorded in `DEVIATIONS.md`.
+
+Tests: `tests/test_label_split_video.py` (full coverage, no channel grouping, stratification and proportions, determinism).
 
 ## Two real algorithm bugs found and fixed during this stage
 
