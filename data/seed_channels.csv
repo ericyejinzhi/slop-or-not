@@ -12,40 +12,40 @@ handle,expected_lean,genre,source_of_discovery,notes
 @LinusTechTips,quality,Science & Technology,well-known,"in-depth tech reviews/build videos, transparent about sponsorships"
 @MKBHD,quality,Science & Technology,well-known,"high production value tech reviews, consistent substantive format"
 @UnboxTherapy,ambiguous,Science & Technology,well-known,"unboxing format can be low-substance by nature, but often does real hands-on testing - check per-video"
-@tech___zone,slop,Science & Technology,well-known,"high-volume gadget/invention listicles with recurring 'gadgets you should see' structure; heavily templated stock-footage-style presentation"
+@tech___zone,slop,Science & Technology,well-known,high-volume gadget/invention listicles with recurring 'gadgets you should see' structure; heavily templated stock-footage-style presentation
 @bingingwithbabish,quality,Howto & Style,well-known,"original cooking content, consistent format, genuine technique demonstrated"
 @JoshuaWeissman,quality,Howto & Style,well-known,"original cooking content, high production value, substantive technique"
 @buzzfeedtasty,ambiguous,Howto & Style,well-known,"short recipe-video format, sometimes light on real technique/detail - check per-video substance"
-@5MinuteCraftsYouTube,slop,Howto & Style,well-known,"extremely high-volume life-hack/craft content with repetitive formats and compilation/recycling characteristics; classic content-farm example"
+@5MinuteCraftsYouTube,slop,Howto & Style,well-known,extremely high-volume life-hack/craft content with repetitive formats and compilation/recycling characteristics; classic content-farm example
 @lastweektonight,quality,News & Politics,well-known,"long-form researched commentary, cites sources, consistent depth - verified handle via YouTube search (my first guess @JohnOliver was wrong)"
 @vox,ambiguous,News & Politics,well-known,"explainer-documentary format, generally substantive but occasionally editorializes past its evidence"
 @Insider,ambiguous,News & Politics,well-known,"mix of substantive short documentaries and clickbait-style human-interest pieces - genuinely mixed, good ambiguous candidate"
-@NextNewsNetwork,slop,News & Politics,well-known,"high-volume sensational news/commentary format with repetitive packaging; weaker slop fit because substantial human editorial input may still be involved"
+@NextNewsNetwork,slop,News & Politics,well-known,high-volume sensational news/commentary format with repetitive packaging; weaker slop fit because substantial human editorial input may still be involved
 @CGPGrey,quality,Film & Animation,well-known,"original animated explainers, substantive scripts, infrequent uploads (quality over volume)"
 @CorridorCrew,quality,Film & Animation,well-known,"VFX/filmmaking breakdowns, genuine technical demonstration"
 @ReelRejects,ambiguous,Film & Animation,well-known,"high-volume trailer/movie reaction format can be repetitive, but hosts provide genuine commentary and also produce reviews, discussions and other original material"
-@mysteryrecappedofficial,slop,Film & Animation,well-known,"movie plots condensed into highly formulaic narrated recaps using extensive reused film footage; repetitive titles/scripts and scalable recap format make it a strong candidate"
+@mysteryrecappedofficial,slop,Film & Animation,well-known,movie plots condensed into highly formulaic narrated recaps using extensive reused film footage; repetitive titles/scripts and scalable recap format make it a strong candidate
 @PewDiePie,ambiguous,Entertainment,well-known,"extremely varied content quality across 15+ years - good genuinely ambiguous/boring-mid-tier example, not a famous slop farm nor consistently high-effort"
-@WatchMojo,slop,Entertainment,well-known,"very high-volume listicle format with standardized scripting and editing; highly templated but significant human research/editing makes this a borderline slop example"
+@WatchMojo,slop,Entertainment,well-known,very high-volume listicle format with standardized scripting and editing; highly templated but significant human research/editing makes this a borderline slop example
 @nprmusic,quality,Music,well-known,"NPR Music (hosts Tiny Desk Concerts) - consistent high-production live performance format, substantive - verified handle via YouTube search (my first guess @tinydeskconcerts was wrong)"
-@Genius,ambiguous,Music,well-known,"mix of substantive lyric-breakdown interviews and lighter clickbait-style content"
-@LayedBakDFR,slop,Music,well-known,"very high-volume music reaction channel with repetitive title/video structure; borderline because the creator's reactions provide genuine human input"
+@Genius,ambiguous,Music,well-known,mix of substantive lyric-breakdown interviews and lighter clickbait-style content
+@LayedBakDFR,slop,Music,well-known,very high-volume music reaction channel with repetitive title/video structure; borderline because the creator's reactions provide genuine human input
 @DudePerfect,quality,Sports,well-known,"genuine skill-based trick-shot content, consistent high production value"
 @houseofhighlights,ambiguous,Sports,well-known,"extremely high-volume sports highlight content with limited transformation in some uploads, but professionally curated and operated as a legitimate sports media outlet"
-@AMHoops,slop,Sports,well-known,"frequent NBA commentary using highly repetitive sensational title/thumbnail structures; scalable formula but meaningful human commentary makes it a borderline slop candidate"
+@AMHoops,slop,Sports,well-known,frequent NBA commentary using highly repetitive sensational title/thumbnail structures; scalable formula but meaningful human commentary makes it a borderline slop candidate
 @teded,quality,Education,well-known,"TED-Ed - original animated educational content, consistently well-researched and substantive"
 @scishow,quality,Education,well-known,"fast-paced science explainers, cites sources, consistently substantive despite high upload frequency"
 @bigthink,ambiguous,Education,well-known,"interview/talk format with varying depth depending on speaker, similar profile to TED's own ambiguous lean"
 @practicalengineeringchannel,quality,Education,well-known,"original, well-researched engineering explainers with real demonstrations - verified handle via API after a wrong first guess (@practicalengineering resolved to an unrelated small channel)"
 @vanossgaming,ambiguous,Gaming,well-known,"edited gameplay highlight compilations with genuine commentary, but a templated 'funny moments' structure repeated across uploads"
 @dantdm,ambiguous,Gaming,well-known,"long-running let's-play format, generally genuine engagement but highly formulaic thumbnail/title patterns at this scale"
-@ludwig,ambiguous,Gaming,well-known,"variety streamer content repurposed into highlight videos - genuine personality-driven commentary but templated edit style"
+@ludwig,ambiguous,Gaming,well-known,variety streamer content repurposed into highlight videos - genuine personality-driven commentary but templated edit style
 @mrwhosetheboss,quality,Science & Technology,well-known,"in-depth, well-produced tech reviews and comparisons with genuine hands-on testing"
 @technologyconnections,quality,Science & Technology,well-known,"deep technical explainers on everyday technology, consistently substantive and original"
-@theverge,ambiguous,Science & Technology,well-known,"mix of substantive reviews/explainers and shorter news-cycle content of varying depth"
+@theverge,ambiguous,Science & Technology,well-known,mix of substantive reviews/explainers and shorter news-cycle content of varying depth
 @gordonramsay,quality,Howto & Style,well-known,"genuine cooking technique and critique content from a real chef, substantive despite celebrity branding"
 @emmymade,quality,Howto & Style,well-known,"hands-on cooking and product-review content, consistently genuine and detailed"
-@howtocookthat,quality,Howto & Style,well-known,"detailed baking/dessert tutorials with real technique demonstrated start to finish"
+@howtocookthat,quality,Howto & Style,well-known,detailed baking/dessert tutorials with real technique demonstrated start to finish
 @cnn,ambiguous,News & Politics,well-known,"mainstream news outlet - substantive reporting mixed with shorter, more sensational clip-style uploads"
 @theyoungturks,ambiguous,News & Politics,well-known,"long-form political commentary, substantive but openly opinionated and variable in depth per episode"
 @screenjunkies,ambiguous,Film & Animation,well-known,"movie review/trailer-reaction format with genuine critical commentary, but a templated recurring segment structure"
@@ -56,6 +56,53 @@ handle,expected_lean,genre,source_of_discovery,notes
 @billboard,ambiguous,Music,well-known,"music news and chart coverage, substantive reporting mixed with shorter promotional-style clips"
 @vevo,ambiguous,Music,well-known,"official music video distribution - content quality depends entirely on the artist/label supplying it, not Vevo's own effort"
 @colorsxstudios,quality,Music,well-known,"original minimalist live-performance series, consistent high-production format with substantive content each time"
-@espn,ambiguous,Sports,well-known,"mainstream sports media - substantive analysis mixed with shorter sensational highlight-style clips"
+@espn,ambiguous,Sports,well-known,mainstream sports media - substantive analysis mixed with shorter sensational highlight-style clips
 @bleacherreport,ambiguous,Sports,well-known,"sports highlight/commentary clips with real editorial voice, but a templated, high-volume sensational format"
 @nba,ambiguous,Sports,well-known,"official league highlight channel - professionally produced but low original commentary/analysis, similar profile to the corpus's existing @houseofhighlights"
+@BandarApnaDost,slop,Entertainment,forum/report: Kapwing report; Lemmy/Reddit threads on report,"Bandar Apna Dost: Fully AI-generated monkey + Hulk-like character skits; Kapwing's most-viewed slop channel. Kapwing (Oct 2025) logged 2.07B views and 500+ videos; now 612M views / 55 videos, so most of the catalogue was removed. Big drop is itself a useful signal."
+@poutyfrenchie,slop,Kids,forum/report: Guardian / Kapwing coverage,Pouty Frenchie: AI French bulldog stories aimed at children. Only ~19 months old with 2.4B views from 118 videos.
+@SleeplessHistorian,slop,Education,forum/report: 404 Media; Slashdot thread,"Sleepless Historian: AI-narrated multi-hour 'boring history' videos; voice glitch exposed it. Social Blade blocked this page. OutlierKit: ~4 uploads/week, ~13.3K views/day, avg video ~2h05m."
+@BoringHistoryBites,slop,Education,forum/report: 404 Media,Boring History Bites: Same AI sleep-history network as Sleepless Historian. Subs far exceed lifetime views; likely videos removed/reset or bought subs.
+@snoozetorian,slop,Education,forum/report: 404 Media,The Snoozetorian: Same AI sleep-history network. Channel created 2007 but content is 2025-era AI; old account repurposed.
+@TheDreamoria,slop,Education,forum/report: 404 Media,Dreamoria: Same AI sleep-history network. Only 6 videos left (very long uploads).
+@historyfallasleep-h1s,slop,Education,forum/report: 404 Media,Gilded Age Silk & Secrets: Reported as 'History Before Sleep'; since renamed. Renamed since the 404 Media report. Low-view example.
+@HistorianSleepy,slop,Education,forum/report: 404 Media,Historian Sleepy: Same AI sleep-history network. Old (2007) account now posting 'boring history for sleep'.
+@sleepysciencechannel,slop,Education,forum/report: Straight Dope forum thread,"Sleepy Science Channel: Forum thread: entirely AI-generated, exposed by a human-impossible mispronunciation. Under 15 months old; ~4 uploads/week."
+@TroomTroom,slop,Howto & Style,forum/report: Wikipedia; Vox; Refinery29,"Troom Troom: Clickbait DIY content farm, widely reacted to. Social Blade page did not show the channel name; verify handle matches the English Troom Troom channel."
+@LaLaLifeEmoji,slop,Entertainment,forum/report: Wikipedia (TheSoul Group),La La Life Emoji: TheSoul-owned spin-off channel. ~3.5 uploads/week per vidIQ.
+@teenz,slop,Entertainment,forum/report: Wikipedia (TheSoul Group),Teen-Z: TheSoul-owned content-farm channel
+@123go_,slop,Howto & Style,forum/report: Wikipedia (TheSoul Group),123 GO!: TheSoul-owned content-farm channel. One of dozens of localized 123 GO! spin-offs.
+@LankyBox,slop,Kids,forum/report: Elevate Creatives; Highline student paper,LankyBox: Called 'YouTube's biggest content farm'; accused of copying smaller creators. ~17.5 uploads/week; 30-day views ~311M as of Jan 2025. Refresh before use.
+@animalstots,slop,Kids,"forum/report: Carla Engelbrecht, '5 kinds of kids slop'","Animals Tots: 'More is more' kids slop: thousands of videos in months. ~4,955 videos in 14 months but only 1.4M lifetime views."
+@lalaloonytv,slop,Kids,"forum/report: Carla Engelbrecht, '5 kinds of kids slop'","Lala Loony TV: 'More is more' kids slop: automated video factory. 6,400+ videos in 14 months."
+@BrightTunes-i7m,slop,Kids,"forum/report: Carla Engelbrecht, '5 kinds of kids slop'",Bright Tunes: 'More is more' kids slop. ~250 views per video.
+@jircreation,slop,Kids,"forum/report: Carla Engelbrecht, '5 kinds of kids slop'","JIR Creation: 'CocoFelon': filters Cocomelon videos to dodge Content ID. Few videos, high subs: re-upload pattern rather than mass upload."
+@FantasticFunTimes,slop,Kids,"forum/report: Carla Engelbrecht, '5 kinds of kids slop'",Fantastic Fun Times: 'Confidently wrong': teaches false letter associations with undisclosed AI. Low-view example.
+@revengerealm,slop,Entertainment,forum/report: Ark newsletter (YouTube policy coverage),Revenge Realm: Scraped Reddit revenge stories with AI voiceover. No uploads in window.
+@donylorenco,slop,News & Politics,forum/report: DFRLab (Mar 2026),Cubo Thompson: Part of a 26-channel AI war-news network. DFRLab cited the handle with 1M+ subs; display name has since changed.
+@talkshowgold,slop,News & Politics,forum/report: WIRED via CO/AI,"Talk Show Gold: Named in WIRED's AI fake-celebrity-video investigation. WIRED reported 88K subs; this account was created later, so it may be a different channel on the same handle."
+@kwebbelkop,slop,Gaming,forum/report: Know Your Meme (Kwebbelkop AI controversy); Futurism,"Kwebbelkop: Creator's plan to hand the channel to AI clones/automation drew wide backlash. Borderline case: human creator, AI-assisted production."
+@MastersOfProphecy,slop,Music,forum/report: Kapwing AI music artists report (2026),Masters of Prophecy: Suno-generated synth rock act. Kapwing reports ~30M subs gained Feb-Jun 2026. Pull fresh stats.
+@historytime,quality,Education,forum/report: 404 Media,"History Time: Human-researched long-form history; creator quoted against AI slop. Slow, deliberate upload cadence."
+@stefanmilo,quality,Education,forum/report: Lemmy (lemmy.4d2.org) thread,Stefan Milo: Recommended in no-AI documentary thread
+@pbsspacetime,quality,Education,forum/report: Lemmy thread,PBS Space Time: Recommended in no-AI documentary thread
+@3blue1brown,quality,Education,forum/report: Lemmy thread,3Blue1Brown: Recommended in no-AI documentary thread
+@notjustbikes,quality,Travel & Events,forum/report: Lemmy thread,Not Just Bikes: Recommended in no-AI documentary thread
+@lemmino,quality,Education,forum/report: Lemmy thread,LEMMiNO: Recommended in no-AI documentary thread. Very infrequent uploads; high views per video.
+@primitivetechnology9550,quality,Howto & Style,forum/report: Lemmy thread,Primitive Technology: Recommended in no-AI documentary thread; real-craft counterpart to 5-Minute Crafts
+@tierzoo,quality,Education,forum/report: Lemmy thread,TierZoo: Recommended in no-AI documentary thread
+@lofigirl,quality,Music,"forum/report: Reddit post (r/ lofi community, via snapshot mirror)",Lofi Girl: Called out on Reddit as the AI-free lofi channel amid slop. Counterpart to the AI lofi rows.
+@numberblocks,quality,Education,forum/report: LearnEnglishFeelGood 'channels we don't recommend' page,Numberblocks: Recommended as the non-farm alternative to Cocomelon-style channels. High volume yet high quality (BBC-produced): a useful hard case.
+@TheAIBibleOfficial,slop,Education,forum/report: 404 Media; User Mag; NPR,"The AI Bible (Pray.com): fully AI-generated Bible 'movie trailer' videos. 415K subs, 70.7M views, 731 videos (~12 uploads per 2 weeks)."
+@DeepBibleStories,slop,Education,forum/report: 404 Media,"Deep Bible Stories: AI-narrated Bible story podcasts. 687K subs, 67.4M views, 297 videos; account dates from 2014."
+@ThePoweroftheWord-Official,slop,Education,forum/report: User Mag,"The Power of the Word: AI religious content, flagged as repeatedly recommended. 907K subs, 107M views from only 94 videos; created Feb 2024."
+@CourtroomConsequences,slop,News & Politics,forum/report: Indicator 'AI lawslop' investigation (Feb 2026),"Courtroom Consequences: AI fake-verdict courtroom dramas. 1.45M subs, 558M views, 900 videos."
+@courtdramastv,slop,News & Politics,forum/report: Indicator 'AI lawslop' investigation (Feb 2026),Court Drama (named 'CourtDramasTv' by Indicator): AI fake courtroom stories. 27.9K subs but 13.8M views in the last 14 days from 50 videos; spiky growth.
+@abandonedfilms,slop,Film & Animation,forum/report: The Current (YouTube AI slop coverage),"Abandoned Films: AI-made fake commercials/parody ads. 354K subs, 16.4M views, 65 videos; dormant."
+@thebedtimehistory-icdi,slop,Education,Social Blade search alongside the 404 Media AI sleep-history network (not named by a forum),"Bedtime & Historian: AI 'boring history for sleep' format. 104K subs, 11.3M views, 158 videos; created Jul 2025. Lower-confidence source."
+@dailytrendz,slop,Entertainment,forum/report: Sloptubers community list (Codeberg),"Daily TrendZ: listed as generating AI slop videos for entertainment. 2.15K subs, 852K views, 87 videos; low-view example."
+@acollierastro,quality,Education,forum: Lemmy no-AI documentary thread,"Angela Collier: theoretical physicist, long-form (50+ min) human-made video essays. 377K subs, 92 videos."
+@clickspring,quality,Howto & Style,forum: Lemmy long-form no-AI thread,"Clickspring: clockmaking and machining craftsmanship. 693K subs, 134 videos; slow, deliberate cadence."
+@xboxahoy,quality,Gaming,forum: Lemmy long-form no-AI thread,"Ahoy: video game history and weapons-history documentaries. 1.86M subs, 308 videos."
+@philosophytube,quality,Education,forum: Lemmy no-AI documentary thread,"Philosophy Tube: hour-long scripted philosophy video essays. 1.67M subs, 393 videos."
+@historyoftheuniverse,quality,Education,forum: r/space thread (via Reddit mirror) confirming it is genAI-free,"History of the Universe: space documentaries; r/space users confirmed 'not AI slop'. 1.11M subs, 59 videos. Hard case: style resembles AI space channels."
