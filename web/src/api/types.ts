@@ -174,3 +174,8 @@ export interface IngestResponse {
   status: 'accepted'
   target: string
 }
+
+// GET /config - what the deployment allows, so the UI can hide controls that cannot work.
+export interface AppConfig {
+  read_only: boolean
+}

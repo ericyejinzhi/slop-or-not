@@ -47,6 +47,22 @@ class Settings(BaseSettings):
     active_model_name: str = ""
     active_model_version: str = ""
 
+    # Model artifacts in object storage (Phase 8 prep). Trained models live in
+    # `models_artifacts/` locally, which is not in git; a fresh server needs them from
+    # somewhere. `slop model publish` uploads a model to s3_bucket_models, and with
+    # fetch_model_from_s3 on, the active model is downloaded on demand when it is not
+    # already on disk. Off by default so local development never touches the network
+    # for this. The bucket must stay private and write-restricted: model.joblib is a
+    # pickle, and loading a pickle from a bucket an attacker can write to means running
+    # their code.
+    s3_bucket_models: str = "models"
+    fetch_model_from_s3: bool = False
+
+    # Read-only deployment (Phase 8 prep). When true the API rejects every request that is
+    # not a GET/HEAD/OPTIONS with a 403, so a public deployment cannot be used to ingest
+    # channels (burning YouTube quota and CPU) or to write labels. Reading stays open.
+    read_only: bool = False
+
     @property
     def database_url(self) -> str:
         base = (

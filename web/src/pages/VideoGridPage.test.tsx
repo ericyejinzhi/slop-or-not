@@ -123,4 +123,32 @@ describe('VideoGridPage', () => {
       expect(capturedUrls.some((url) => url.includes('predicted_label=down'))).toBe(true)
     })
   })
+
+  it('shows the ingest form on a normal deployment', async () => {
+    server.use(
+      http.get('/api/videos', () =>
+        HttpResponse.json({ items: [makeVideo()], total: 1, limit: 20, offset: 0 }),
+      ),
+    )
+    renderPage()
+    await screen.findByText('A Test Video')
+
+    expect(screen.getByText('Ingest a channel')).toBeInTheDocument()
+  })
+
+  it('hides the ingest form on a read-only deployment', async () => {
+    server.use(
+      http.get('/api/config', () => HttpResponse.json({ read_only: true })),
+      http.get('/api/videos', () =>
+        HttpResponse.json({ items: [makeVideo()], total: 1, limit: 20, offset: 0 }),
+      ),
+    )
+    renderPage()
+    await screen.findByText('A Test Video')
+
+    // the form is shown until the config arrives (fail open), then removed
+    await waitFor(() => {
+      expect(screen.queryByText('Ingest a channel')).not.toBeInTheDocument()
+    })
+  })
 })

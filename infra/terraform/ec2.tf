@@ -59,18 +59,32 @@ resource "aws_iam_role_policy" "app_s3_access" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:ListBucket",
-      ]
-      Resource = [
-        aws_s3_bucket.thumbnails.arn,
-        "${aws_s3_bucket.thumbnails.arn}/*",
-      ]
-    }]
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:ListBucket",
+        ]
+        Resource = [
+          aws_s3_bucket.thumbnails.arn,
+          "${aws_s3_bucket.thumbnails.arn}/*",
+        ]
+      },
+      {
+        # Read-only on purpose: the app only fetches published models (a pickle - see s3.tf).
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:ListBucket",
+        ]
+        Resource = [
+          aws_s3_bucket.models.arn,
+          "${aws_s3_bucket.models.arn}/*",
+        ]
+      },
+    ]
   })
 }
 

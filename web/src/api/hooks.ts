@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getChannel } from './channels'
+import { getAppConfig } from './config'
 import { createIngest } from './ingest'
 import {
   createBatchLabel,
@@ -13,6 +14,19 @@ import {
 } from './labels'
 import type { BatchLabelCreateRequest, IngestRequest, LabelCreateRequest } from './types'
 import { getVideoDetail, listVideos, type ListVideosParams, type VideoDetailParams } from './videos'
+
+// Whether this deployment accepts writes. Fails open (assumes writable until the server
+// says otherwise): the API enforces read-only itself with a 403, so this only decides
+// whether to show controls that would fail.
+export function useReadOnly(): boolean {
+  const { data } = useQuery({
+    queryKey: ['config'],
+    queryFn: getAppConfig,
+    staleTime: Infinity,
+    retry: false,
+  })
+  return data?.read_only ?? false
+}
 
 export function useVideos(params: ListVideosParams) {
   return useQuery({

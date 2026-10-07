@@ -91,6 +91,44 @@ def artifacts(tmp_path, monkeypatch):
     return tmp_path
 
 
+def test_the_active_model_is_fetched_before_its_feature_list_is_read(artifacts, monkeypatch):
+    fetched = []
+
+    def fake_ensure(settings, artifacts_dir, name, version):
+        fetched.append((name, version, artifacts_dir))
+        # simulate the download landing the metadata on disk
+        _write_model_metadata(artifacts_dir, name, version, METADATA_NUMERIC_FEATURES)
+        return True
+
+    monkeypatch.setattr(refresh, "ensure_local_model", fake_ensure)
+
+    needs = refresh.active_model_feature_needs(ACTIVE)
+
+    assert fetched == [("logistic_regression", "v1", artifacts)]
+    assert needs == (False, False)  # read from the file the "download" produced
+
+
+def test_the_active_model_is_fetched_before_scoring_with_it(monkeypatch):
+    order = []
+    monkeypatch.setattr(
+        refresh, "ensure_local_model", lambda settings, d, name, version: order.append("fetch")
+    )
+    monkeypatch.setattr(refresh, "score_videos", lambda **kw: order.append("score") or ["v1"])
+
+    refresh.score_with_active_model(ACTIVE, ["v1"])
+
+    assert order == ["fetch", "score"]
+
+
+def test_nothing_is_fetched_when_there_is_no_active_model_or_nothing_to_score(monkeypatch):
+    monkeypatch.setattr(
+        refresh, "ensure_local_model", lambda *a, **kw: pytest.fail("must not fetch")
+    )
+    assert refresh.active_model_feature_needs(NO_MODEL) == (True, True)
+    assert refresh.score_with_active_model(NO_MODEL, ["v1"])[0] == []
+    assert refresh.score_with_active_model(ACTIVE, [])[0] == []
+
+
 def test_a_metadata_only_model_needs_neither_nlp_nor_vision_features(artifacts):
     _write_model_metadata(
         artifacts, "logistic_regression", "v1", METADATA_NUMERIC_FEATURES + ["genre"]

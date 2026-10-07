@@ -1,4 +1,5 @@
 import { Link, NavLink, Outlet } from 'react-router-dom'
+import { useReadOnly } from '../api/hooks'
 
 function navLinkClass({ isActive }: { isActive: boolean }): string {
   return `rounded px-3 py-1.5 text-sm font-medium ${
@@ -7,6 +8,10 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
 }
 
 export function Layout() {
+  // Both labeling pages write labels (the Labeled page can relabel a video), so a
+  // read-only deployment has nothing useful to show there.
+  const readOnly = useReadOnly()
+
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="border-b border-slate-200 bg-white">
@@ -17,12 +22,16 @@ export function Layout() {
           <NavLink to="/" end className={navLinkClass}>
             Videos
           </NavLink>
-          <NavLink to="/label" className={navLinkClass}>
-            Label
-          </NavLink>
-          <NavLink to="/labeled" className={navLinkClass}>
-            Labeled
-          </NavLink>
+          {!readOnly && (
+            <>
+              <NavLink to="/label" className={navLinkClass}>
+                Label
+              </NavLink>
+              <NavLink to="/labeled" className={navLinkClass}>
+                Labeled
+              </NavLink>
+            </>
+          )}
         </nav>
       </header>
       <main className="mx-auto max-w-5xl px-4 py-6">

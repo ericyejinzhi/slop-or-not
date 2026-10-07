@@ -24,6 +24,7 @@ from sloppy.ingest.pipeline import (
     ingest_channel,
     ingest_video,
 )
+from sloppy.models.artifact_store import ensure_local_model
 from sloppy.models.scoring import score_videos
 from sloppy.models.train import (
     TEXT_CATEGORICAL_FEATURES,
@@ -65,6 +66,12 @@ def active_model_feature_needs(settings: Settings) -> tuple[bool, bool]:
     (True, True): compute everything, the safe previous behavior."""
     if not settings.active_model_name or not settings.active_model_version:
         return True, True
+    ensure_local_model(
+        settings,
+        DEFAULT_MODEL_ARTIFACTS_DIR,
+        settings.active_model_name,
+        settings.active_model_version,
+    )
     path = (
         DEFAULT_MODEL_ARTIFACTS_DIR
         / settings.active_model_name
@@ -109,6 +116,12 @@ def score_with_active_model(
     if not video_ids:
         return [], "no videos to score"
 
+    ensure_local_model(
+        settings,
+        DEFAULT_MODEL_ARTIFACTS_DIR,
+        settings.active_model_name,
+        settings.active_model_version,
+    )
     scored = score_videos(
         video_ids=video_ids,
         model_name=settings.active_model_name,

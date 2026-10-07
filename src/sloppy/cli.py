@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import typer
+from botocore.exceptions import BotoCoreError, ClientError
 from sqlalchemy import func
 
 from sloppy import cli_ui
@@ -45,6 +46,7 @@ from sloppy.label.split import (
     channel_stats,
 )
 from sloppy.models.ablation import format_ablation_table
+from sloppy.models.artifact_store import download_model, upload_model
 from sloppy.models.cv import GROUP_BY_CHOICES, ablate, cross_validate, threshold_sweep
 from sloppy.models.evaluate import BinaryMetrics, evaluate
 from sloppy.models.report import top_errors
@@ -1073,6 +1075,56 @@ def cv_command(
                     "\n", "\n    "
                 )
             )
+
+
+@model_app.command("publish")
+def publish_command(
+    model_name: str = typer.Option(..., help="e.g. 'logistic_regression'"),
+    model_version: str = typer.Option(..., help="version string printed by `slop model train`"),
+    artifacts_dir: Path = typer.Option(DEFAULT_MODEL_ARTIFACTS_DIR),  # noqa: B008
+) -> None:
+    """Upload a locally trained model (model.joblib + metadata.json) to the models bucket
+    (S3_BUCKET_MODELS; MinIO locally, S3 in production), so a server that did not train it
+    can fetch it. The bucket is created if missing. Keep it private and write-restricted -
+    model.joblib is a pickle."""
+    settings = get_settings()
+    try:
+        keys = upload_model(
+            get_s3_client(settings),
+            settings.s3_bucket_models,
+            artifacts_dir,
+            model_name,
+            model_version,
+        )
+    except FileNotFoundError as exc:
+        cli_ui.fail(str(exc))
+        raise typer.Exit(1) from exc
+    for key in keys:
+        cli_ui.ok(f"s3://{settings.s3_bucket_models}/{key}")
+
+
+@model_app.command("fetch")
+def fetch_command(
+    model_name: str = typer.Option(..., help="e.g. 'logistic_regression'"),
+    model_version: str = typer.Option(..., help="version string of a published model"),
+    artifacts_dir: Path = typer.Option(DEFAULT_MODEL_ARTIFACTS_DIR),  # noqa: B008
+) -> None:
+    """Download a published model from the models bucket into the local artifacts layout
+    (the inverse of `slop model publish`). Unlike the automatic fetch the API and flows do
+    when FETCH_MODEL_FROM_S3 is on, this always tries the download and reports failure."""
+    settings = get_settings()
+    try:
+        model_dir = download_model(
+            get_s3_client(settings),
+            settings.s3_bucket_models,
+            artifacts_dir,
+            model_name,
+            model_version,
+        )
+    except (BotoCoreError, ClientError, OSError) as exc:
+        cli_ui.fail(f"could not fetch {model_name}/{model_version}: {exc}")
+        raise typer.Exit(1) from exc
+    cli_ui.ok(f"fetched to {model_dir}")
 
 
 @model_app.command("evaluate")

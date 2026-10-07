@@ -16,6 +16,12 @@ variable "thumbnails_bucket_name" {
   default     = "slop-or-not-thumbnails-CHANGE-ME"
 }
 
+variable "models_bucket_name" {
+  description = "Globally-unique S3 bucket name for published model artifacts (see `slop model publish`) - unique across ALL of AWS, so the default below must be changed before ever applying this."
+  type        = string
+  default     = "slop-or-not-models-CHANGE-ME"
+}
+
 variable "db_name" {
   description = "Postgres database name"
   type        = string

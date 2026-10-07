@@ -1,4 +1,4 @@
-import { useVideos } from '../api/hooks'
+import { useReadOnly, useVideos } from '../api/hooks'
 import { IngestForm } from '../components/IngestForm'
 import { VideoGrid } from '../components/VideoGrid'
 import { VideoListControls } from '../components/VideoListControls'
@@ -9,10 +9,11 @@ export function VideoGridPage() {
     useVideoListState()
 
   const { data, isLoading, isError } = useVideos(params)
+  const readOnly = useReadOnly()
 
   return (
     <div className="space-y-4">
-      <IngestForm />
+      {!readOnly && <IngestForm />}
 
       <VideoListControls
         sort={sort}

@@ -25,6 +25,8 @@ terraform plan -var="db_password=placeholder"
 | Terraform output | `.env` variable | Notes |
 |---|---|---|
 | `thumbnails_bucket_name` | `S3_BUCKET_THUMBNAILS` | Must be globally unique across all of AWS - the default in `variables.tf` is a placeholder that must be changed |
+| `models_bucket_name` | `S3_BUCKET_MODELS` (+ `FETCH_MODEL_FROM_S3=true`) | Globally unique like the thumbnails bucket (change the placeholder default). Publish a trained model with your OWN AWS credentials: `slop model publish --model-name ... --model-version ...`; the instance role can only read it |
+| - | `READ_ONLY=true` | For a public deployment: the API then rejects every non-GET request (no ingesting, no label writes) and the dashboard hides those controls |
 | `rds_endpoint` | `POSTGRES_HOST`/`POSTGRES_PORT` | `rds_endpoint` is `host:port`; split across the two variables |
 | (the EC2 instance's IAM role) | leave `S3_ACCESS_KEY`/`S3_SECRET_KEY` **unset** | `src/sloppy/storage.py::get_s3_client` (Phase 8 Stage 1) falls back to boto3's default credential chain - which resolves the instance's IAM role automatically - only when these are unset, not blank |
 | - | `POSTGRES_SSLMODE=require` | RDS should always be connected to over TLS |
@@ -42,5 +44,6 @@ terraform plan -var="db_password=placeholder"
 
 - The S3 bucket blocks all public access (`aws_s3_bucket_public_access_block`, all four settings `true`) and enables default server-side encryption - the app reaches it only via presigned URLs or the EC2 instance's IAM role, never via a public bucket policy.
 - RDS is `publicly_accessible = false` and only reachable from the app instance's own security group - never exposed directly to the internet.
-- The EC2 instance's IAM role is scoped to exactly the 3 S3 actions the app actually calls (`GetObject`/`PutObject`/`ListBucket`), on exactly the one thumbnails bucket - not a wildcard policy.
+- The EC2 instance's IAM role is scoped to exactly the 3 S3 actions the app actually calls (`GetObject`/`PutObject`/`ListBucket`) on the thumbnails bucket, plus read-only (`GetObject`/`ListBucket`) on the models bucket - not a wildcard policy. The models bucket is read-only for the app on purpose: `model.joblib` is a pickle, so write access to it would mean running code on the server.
+- **Unvalidated:** the models-bucket resources, the extra IAM statement and the new variable/output were added in an environment without the `terraform` binary, so `terraform init -backend=false && terraform validate && terraform fmt -check` has not been run on them (they copy the existing thumbnails blocks closely). Run it before relying on them.
 - `ssh_ingress_cidr` defaults to `203.0.113.1/32` (an RFC 5737 documentation-only address, never a real routable host) - a deliberately non-functional placeholder, not "open to the world," forcing whoever applies this to consciously set it to their own IP first.
