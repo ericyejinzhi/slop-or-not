@@ -19,7 +19,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from xgboost import XGBClassifier
 
 MODEL_NAMES = ("logistic_regression", "xgboost")
@@ -95,7 +95,12 @@ ALL_FEATURES = NUMERIC_FEATURES + CATEGORICAL_FEATURES
 def build_preprocessor(
     numeric_features: list[str], categorical_features: list[str]
 ) -> ColumnTransformer:
-    numeric_pipeline = Pipeline([("impute", SimpleImputer(strategy="median"))])
+    # Scaling is for logistic regression: features range from ratios near 0 to durations in
+    # the thousands, which stopped lbfgs from converging. Tree models (XGBoost) are
+    # invariant to it, so sharing one preprocessor changes nothing for them.
+    numeric_pipeline = Pipeline(
+        [("impute", SimpleImputer(strategy="median")), ("scale", StandardScaler())]
+    )
     categorical_pipeline = Pipeline([("onehot", OneHotEncoder(handle_unknown="ignore"))])
     return ColumnTransformer(
         [

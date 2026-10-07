@@ -45,7 +45,7 @@ from sloppy.label.split import (
     channel_stats,
 )
 from sloppy.models.ablation import format_ablation_table
-from sloppy.models.cv import GROUP_BY_CHOICES, cross_validate
+from sloppy.models.cv import GROUP_BY_CHOICES, ablate, cross_validate, threshold_sweep
 from sloppy.models.evaluate import BinaryMetrics, evaluate
 from sloppy.models.report import top_errors
 from sloppy.models.scores import upsert_video_score
@@ -937,6 +937,18 @@ def cv_command(
     feature_group: str = typer.Option(
         "all", help=f"Feature set: one of {', '.join(FEATURE_GROUPS)} (see `slop model ablation`)"
     ),
+    ablation: bool = typer.Option(
+        False,
+        "--ablation",
+        help="Compare all feature groups (metadata / metadata_text / all) over identical "
+        "folds instead of running one group; ignores --feature-group.",
+    ),
+    threshold_sweep_flag: bool = typer.Option(
+        False,
+        "--threshold-sweep",
+        help="Also print precision/recall/F1 at thresholds 0.1-0.9 from the pooled "
+        "out-of-fold predictions. Analysis only - the 0.5 default is not changed.",
+    ),
 ) -> None:
     """Stratified k-fold cross-validation over every non-skip labeled video, grouped by
     channel. Replaces a single noisy val/test split with k held-out folds, so the number
@@ -974,12 +986,30 @@ def cv_command(
     n_channels = df["channel_id"].nunique()
     typer.secho(
         f"{len(df)} labeled video(s) from {n_channels} channel(s); {folds}-fold x {repeats} "
-        f"repeat(s), group_by={group_by}, features={feature_group}",
+        f"repeat(s), group_by={group_by}, features={'ablation' if ablation else feature_group}",
         bold=True,
     )
 
     model_names = MODEL_NAMES if model == "both" else (model,)
     for model_name in model_names:
+        if ablation:
+            try:
+                with cli_ui.spinner(f"Ablating {model_name} over {len(FEATURE_GROUPS)} groups..."):
+                    table = ablate(
+                        df,
+                        model_name,
+                        n_splits=folds,
+                        seed=seed,
+                        repeats=repeats,
+                        group_by=group_by,
+                    )
+            except ValueError as exc:
+                cli_ui.fail(f"{model_name}: {exc}")
+                raise typer.Exit(1) from exc
+            typer.secho(f"\n{model_name} (mean/std across folds; delta is paired)", bold=True)
+            typer.echo(table.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+            continue
+
         try:
             with cli_ui.spinner(f"Cross-validating {model_name}..."):
                 result = cross_validate(
@@ -1010,6 +1040,16 @@ def cv_command(
                 f"[{row.min:.3f}, {row.max:.3f}]"
             )
         _print_metrics("pooled out-of-fold", result.pooled())
+
+        if threshold_sweep_flag:
+            typer.echo("  threshold sweep (pooled out-of-fold, averaged over repeats):")
+            sweep = threshold_sweep(result.oof)
+            typer.echo(
+                "    "
+                + sweep.to_string(index=False, float_format=lambda x: f"{x:.3f}").replace(
+                    "\n", "\n    "
+                )
+            )
 
 
 @model_app.command("evaluate")

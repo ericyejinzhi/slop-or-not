@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sloppy.models.cv import cross_validate, make_folds
+from sloppy.models.cv import ablate, cross_validate, make_folds, threshold_sweep
 
 NUMERIC = ["signal", "noise"]
 
@@ -119,3 +119,58 @@ def test_cross_validate_repeats_multiply_folds_and_use_different_partitions():
     first = result.oof[result.oof["repeat"] == 0].set_index("video_id")["fold"]
     second = result.oof[result.oof["repeat"] == 1].set_index("video_id")["fold"]
     assert not first.sort_index().equals(second.sort_index())
+
+
+def test_ablate_shows_an_informative_group_beating_a_noise_only_group_on_paired_folds():
+    df = _synthetic(n_channels=30, down_channels=10)
+    table = ablate(
+        df,
+        "logistic_regression",
+        n_splits=5,
+        repeats=2,
+        groups={"noise_only": (["noise"], []), "with_signal": (["noise", "signal"], [])},
+    )
+
+    assert list(table["feature_group"]) == ["noise_only", "with_signal"]
+    assert list(table["n_features"]) == [1, 2]
+    rows = table.set_index("feature_group")
+    # the reference group's delta against itself is exactly zero
+    assert rows.loc["noise_only", "pr_auc_vs_noise_only"] == 0.0
+    assert rows.loc["with_signal", "pr_auc_vs_noise_only"] > 0.1
+    assert rows.loc["with_signal", "pr_auc"] > rows.loc["noise_only", "pr_auc"]
+
+
+def _oof(scores_and_labels, repeat=0):
+    return pd.DataFrame([{"score": s, "y": y, "repeat": repeat} for s, y in scores_and_labels])
+
+
+def test_threshold_sweep_computes_precision_recall_f1_per_threshold():
+    # 4 slop videos (y=1) scored .9 .8 .4 .2, 4 fine videos (y=0) scored .7 .3 .2 .1
+    oof = _oof([(0.9, 1), (0.8, 1), (0.4, 1), (0.2, 1), (0.7, 0), (0.3, 0), (0.2, 0), (0.1, 0)])
+
+    sweep = threshold_sweep(oof, thresholds=(0.5, 0.3)).set_index("threshold")
+
+    # at 0.5 flagged = {.9,.8,.7}: tp=2 fp=1 fn=2
+    assert sweep.loc[0.5, "precision"] == pytest.approx(2 / 3)
+    assert sweep.loc[0.5, "recall"] == pytest.approx(0.5)
+    assert sweep.loc[0.5, "f1"] == pytest.approx(2 * 2 / (2 * 2 + 1 + 2))
+    assert sweep.loc[0.5, "flagged"] == pytest.approx(3 / 8)
+    # at 0.3 flagged = {.9,.8,.7,.4,.3}: tp=3 fp=2 fn=1
+    assert sweep.loc[0.3, "precision"] == pytest.approx(3 / 5)
+    assert sweep.loc[0.3, "recall"] == pytest.approx(3 / 4)
+
+
+def test_threshold_sweep_averages_over_repeats_not_pooling_them():
+    perfect = _oof([(0.9, 1), (0.1, 0)], repeat=0)  # f1 = 1 at threshold 0.5
+    useless = _oof([(0.1, 1), (0.9, 0)], repeat=1)  # f1 = 0 at threshold 0.5
+
+    sweep = threshold_sweep(pd.concat([perfect, useless]), thresholds=(0.5,))
+
+    assert sweep.loc[0, "f1"] == pytest.approx(0.5)
+
+
+def test_threshold_sweep_handles_a_threshold_that_flags_nothing():
+    sweep = threshold_sweep(_oof([(0.2, 1), (0.1, 0)]), thresholds=(0.9,))
+    assert np.isnan(sweep.loc[0, "precision"])
+    assert sweep.loc[0, "f1"] == 0.0
+    assert sweep.loc[0, "flagged"] == 0.0

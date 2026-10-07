@@ -72,10 +72,13 @@ from day one" design goal.
 end to end on real YouTube data: 60 channels, 626 videos, 646 channel-level labels (about
 32% slop), then splits, NLP and vision features, and both baseline models. The honest
 estimate, from stratified k-fold cross-validation grouped by channel (so every test channel
-is one the model never trained on): PR-AUC 0.59 +/- 0.13 for XGBoost and 0.60 +/- 0.09 for
-logistic regression, against a majority-class baseline of 0.31 (F1 about 0.5 for both models,
-0 for the baseline). That is real signal on unseen channels, but noisy and far from
-reliable, with only about 58 labeled channels behind it. An earlier by-video split scored
+is one the model never trained on): PR-AUC 0.59 +/- 0.13 for XGBoost and 0.65 +/- 0.10 for
+logistic regression (F1 0.51 and 0.62), against a majority-class baseline of 0.31 (F1 0).
+That is real signal on unseen channels, but noisy and far from reliable, with only about 58
+labeled channels behind it. A feature-group ablation under the same cross-validation found
+that the 17 metadata features alone do as well as or slightly better than adding the text
+and vision features (logistic regression 0.66 vs 0.65), so at this data size the NLP and CLIP
+features are not yet pulling their weight. An earlier by-video split scored
 XGBoost at PR-AUC 0.99; that figure was inflated by channel leakage (labels are per channel,
 so the model could just recognize channels) and should be ignored. Details:
 [docs/writeups/phase-3/cross-validation.md](docs/writeups/phase-3/cross-validation.md) and

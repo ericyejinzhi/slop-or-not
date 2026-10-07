@@ -11,6 +11,7 @@ Works on an already-assembled dataframe (channel_id/y/features), so it needs no 
 training and metrics reuse train.py's train_model/score_dataframe and evaluate.py.
 """
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -18,9 +19,10 @@ import pandas as pd
 from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
 
 from sloppy.models.evaluate import BinaryMetrics, EvaluationReport, _binary_metrics, evaluate
-from sloppy.models.train import score_dataframe, train_model
+from sloppy.models.train import FEATURE_GROUPS, score_dataframe, train_model
 
 GROUP_BY_CHOICES = ("channel", "video")
+DEFAULT_THRESHOLDS = tuple(round(0.1 * i, 2) for i in range(1, 10))
 
 
 @dataclass
@@ -161,3 +163,100 @@ def cross_validate(
         folds=folds,
         oof=pd.concat(oof_parts, ignore_index=True),
     )
+
+
+def ablate(
+    df: pd.DataFrame,
+    model_name: str,
+    n_splits: int = 5,
+    seed: int = 42,
+    repeats: int = 1,
+    group_by: str = "channel",
+    groups: dict[str, tuple[list[str], list[str]]] | None = None,
+) -> pd.DataFrame:
+    """Cross-validate the same estimator on each cumulative feature group (default
+    train.FEATURE_GROUPS: metadata / metadata_text / all) over IDENTICAL folds - folds
+    depend only on the labels and channels, so every group sees the same partitions and
+    the per-fold differences are paired, which is far less noisy than comparing two
+    separately-drawn sets of folds.
+
+    One row per group: mean/std across folds of PR-AUC and F1, plus the paired per-fold
+    PR-AUC change versus the FIRST group (the reference, "metadata" by default).
+    """
+    groups = groups if groups is not None else FEATURE_GROUPS
+
+    results = {
+        name: cross_validate(
+            df,
+            model_name,
+            n_splits=n_splits,
+            seed=seed,
+            repeats=repeats,
+            group_by=group_by,
+            numeric_features=numeric,
+            categorical_features=categorical,
+        )
+        for name, (numeric, categorical) in groups.items()
+    }
+
+    def per_fold(result: CrossValidationResult, metric: str) -> np.ndarray:
+        return np.array([getattr(f.report.overall, metric) for f in result.folds], dtype=float)
+
+    reference_name = next(iter(groups))
+    reference_pr_auc = per_fold(results[reference_name], "pr_auc")
+
+    rows = []
+    for name, (numeric, categorical) in groups.items():
+        pr_auc = per_fold(results[name], "pr_auc")
+        f1 = per_fold(results[name], "f1")
+        delta = pr_auc - reference_pr_auc
+        rows.append(
+            {
+                "feature_group": name,
+                "n_features": len(numeric) + len(categorical),
+                "pr_auc": float(np.nanmean(pr_auc)),
+                "pr_auc_std": float(np.nanstd(pr_auc)),
+                "f1": float(np.nanmean(f1)),
+                "f1_std": float(np.nanstd(f1)),
+                f"pr_auc_vs_{reference_name}": float(np.nanmean(delta)),
+                "delta_std": float(np.nanstd(delta)),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def threshold_sweep(
+    oof: pd.DataFrame, thresholds: tuple[float, ...] = DEFAULT_THRESHOLDS
+) -> pd.DataFrame:
+    """Precision/recall/F1 of the slop class at each decision threshold, from a
+    CrossValidationResult's out-of-fold predictions (computed per repeat, then averaged,
+    so repeats don't double-count videos). `flagged` is the share of videos predicted
+    slop. This is analysis only: picking a threshold off the same predictions it is then
+    scored on is optimistic, especially with only ~60 labeled channels."""
+    rows = []
+    for threshold in thresholds:
+        per_repeat = []
+        for _repeat, part in oof.groupby("repeat"):
+            predicted = part["score"] >= threshold
+            actual = part["y"] == 1
+            tp = int((predicted & actual).sum())
+            fp = int((predicted & ~actual).sum())
+            fn = int((~predicted & actual).sum())
+            precision = tp / (tp + fp) if tp + fp else float("nan")
+            recall = tp / (tp + fn) if tp + fn else float("nan")
+            f1 = 2 * tp / (2 * tp + fp + fn) if 2 * tp + fp + fn else 0.0
+            per_repeat.append((precision, recall, f1, float(predicted.mean())))
+        with warnings.catch_warnings():
+            # precision is undefined (NaN) when a threshold flags nothing in every repeat
+            warnings.simplefilter("ignore", RuntimeWarning)
+            precision, recall, f1, flagged = np.nanmean(np.array(per_repeat, dtype=float), axis=0)
+        rows.append(
+            {
+                "threshold": threshold,
+                "precision": float(precision),
+                "recall": float(recall),
+                "f1": float(f1),
+                "flagged": float(flagged),
+            }
+        )
+    return pd.DataFrame(rows)
