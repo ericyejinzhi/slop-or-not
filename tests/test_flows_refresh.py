@@ -130,8 +130,56 @@ def test_score_channel_task_scores_when_active_model_is_set(monkeypatch):
     assert captured["video_ids"] == ["v1", "v2"]
 
 
+def _patch_flow_basics(monkeypatch, call_order, needs):
+    monkeypatch.setattr(refresh, "get_settings", lambda: Settings(_env_file=None))
+    monkeypatch.setattr(refresh, "active_model_feature_needs", lambda settings: needs)
+    monkeypatch.setattr(
+        refresh,
+        "ingest_channel_task",
+        lambda target: call_order.append(("ingest", target)) or "UC_x",
+    )
+    monkeypatch.setattr(
+        refresh,
+        "compute_nlp_task",
+        lambda channel_id: call_order.append(("nlp", channel_id)) or ["v1"],
+    )
+    monkeypatch.setattr(
+        refresh,
+        "compute_vision_task",
+        lambda channel_id: call_order.append(("vision", channel_id)) or ["v1"],
+    )
+    monkeypatch.setattr(
+        refresh,
+        "score_channel_task",
+        lambda channel_id: call_order.append(("score", channel_id)) or ["v1"],
+    )
+
+
+def test_refresh_channel_flow_skips_feature_steps_a_metadata_only_model_does_not_use(
+    monkeypatch,
+):
+    call_order = []
+    _patch_flow_basics(monkeypatch, call_order, needs=(False, False))
+
+    result = refresh.refresh_channel_flow.fn("@somechannel")
+
+    assert call_order == [("ingest", "@somechannel"), ("score", "UC_x")]
+    assert result == {"channel_id": "UC_x", "nlp_processed": 0, "vision_processed": 0, "scored": 1}
+
+
+def test_refresh_channel_flow_runs_only_the_vision_step_when_only_vision_is_needed(monkeypatch):
+    call_order = []
+    _patch_flow_basics(monkeypatch, call_order, needs=(False, True))
+
+    refresh.refresh_channel_flow.fn("@somechannel")
+
+    assert [step for step, _ in call_order] == ["ingest", "vision", "score"]
+
+
 def test_refresh_channel_flow_calls_all_four_steps_in_order(monkeypatch):
     call_order = []
+    monkeypatch.setattr(refresh, "get_settings", lambda: Settings(_env_file=None))
+    monkeypatch.setattr(refresh, "active_model_feature_needs", lambda settings: (True, True))
 
     monkeypatch.setattr(
         refresh,

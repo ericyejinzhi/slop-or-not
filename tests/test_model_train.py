@@ -146,3 +146,39 @@ def test_save_model_writes_artifact_and_metadata(tmp_path):
     assert metadata["model_version"] == "test-version"
     assert metadata["train_row_count"] == len(df)
     assert metadata["features"] == ALL_FEATURES
+    assert metadata["feature_group"] == "all"  # the default
+
+
+def test_save_model_records_which_feature_group_the_model_was_trained_on(tmp_path):
+    df = _separable_dataframe()
+    trained = train_model(
+        "logistic_regression",
+        df,
+        numeric_features=METADATA_NUMERIC_FEATURES,
+        categorical_features=METADATA_CATEGORICAL_FEATURES,
+        version="test-version",
+    )
+
+    model_path = save_model(trained, tmp_path, train_row_count=len(df), feature_group="metadata")
+
+    metadata = json.loads((model_path.parent / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata["feature_group"] == "metadata"
+    assert metadata["features"] == METADATA_NUMERIC_FEATURES + METADATA_CATEGORICAL_FEATURES
+
+
+def test_a_metadata_trained_model_scores_videos_that_have_no_nlp_or_vision_columns_at_all():
+    # The point of the metadata feature group: a freshly ingested video, before any slow
+    # NLP/CLIP computation, can still be scored.
+    df = _separable_dataframe()
+    trained = train_model(
+        "logistic_regression",
+        df,
+        numeric_features=METADATA_NUMERIC_FEATURES,
+        categorical_features=METADATA_CATEGORICAL_FEATURES,
+        version="test-version",
+    )
+    metadata_only = df[trained.all_features + ["y"]]  # every text/vision column dropped
+
+    scores = score_dataframe(trained, metadata_only)
+
+    assert roc_auc_score(metadata_only["y"], scores) > 0.9

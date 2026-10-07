@@ -61,6 +61,8 @@ XGBoost is unchanged (identical to three decimals in every metric, per fold and 
 
 New flags: `--ablation` (compare all feature groups; ignores `--feature-group`) and `--threshold-sweep`. Code: `ablate` and `threshold_sweep` in `src/sloppy/models/cv.py`; tests in `tests/test_model_cv.py`.
 
+**Acting on it (2026-10-07):** `slop model train --feature-group metadata` now trains on the 17 metadata features only (default is still `all`), and records `feature_group` in the model's `metadata.json`. A real metadata-only logistic regression (`20261007-200744`) scored val PR-AUC 0.732 / F1 0.698 and test PR-AUC 0.830 / F1 0.714 on the channel-grouped splits, versus 0.781 / 0.706 and 0.807 / 0.727 for the all-features model (`20261007-194834`): comparable, not clearly better or worse, in line with the ablation. Because it needs no NLP or CLIP features, new channels can be ingested, labeled, trained on and scored without the multi-hour feature step, and refreshing a channel skips those steps (`docs/writeups/phase-7/stage-4-refresh-flow.md`). Not promoted; the active model still uses all features.
+
 **What this changes:** the expensive NLP and vision feature computation is not demonstrably earning its keep yet. Do not delete it - re-run `slop model cv --ablation` once there are 100+ labeled channels, when the extra features have a chance to pay off. The currently active model (`logistic_regression/20261006-201143`) was trained before the scaler existed; retraining it would apply the improvement.
 
 ## What to look out for

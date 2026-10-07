@@ -21,6 +21,12 @@ Two `@flow`-decorated functions:
 - Bug fixed: scoring wrote `split="live"` for every video it scored, so refreshing a labeled channel overwrote the `train`/`val`/`test` split recorded in `video_scores` for the active model, which `slop model evaluate` reads. `upsert_video_score` gained `preserve_split`, which `score_videos` now uses: an existing row's score and label are updated but its split is kept; a new row still gets `live`.
 - Note for the daily refresh: since ingest is now a random sample each run, a refresh adds up to 10 more videos from the channel's recent uploads rather than guaranteeing the newest ones; pass a most-recent-N cap if "latest uploads only" is wanted.
 
+## Update 2026-10-07 - feature steps are skipped when the active model doesn't use them
+
+`refresh_channel_flow` (and the plain `refresh_channel`/`refresh_video` in `src/sloppy/refresh.py`) now ask `active_model_feature_needs(settings)` whether the active model uses any NLP-derived or CLIP-derived feature, by reading the `features` list in its saved `metadata.json`. A model trained with `slop model train --feature-group metadata` needs neither, so `compute_nlp_task`/`compute_vision_task` are not run, nothing slow runs, and the NLP/CLIP models are never loaded into the process. Anything unknown (no active model, missing or unreadable artifact) falls back to computing everything, the previous behavior. The flow's result dict is unchanged in shape (skipped steps report 0 processed); the plain functions also report `features_skipped`. The artifacts are read from `models_artifacts/` relative to the working directory, same as scoring. Behavior is unchanged for the current active model, which uses all features.
+
+Verified on real data (2026-10-07) that the Prefect failure path works: a bad channel ran the ingest task 4 times (first attempt plus 3 retries, 30 seconds apart) and then failed the task and the flow, all recorded on the server. See `docs/writeups/TODO.md` item 17 for what was and was not exercised.
+
 ## What it should look like
 
 ```python

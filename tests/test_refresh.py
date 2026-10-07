@@ -5,11 +5,14 @@ this checks the wiring, including the two behaviors this module exists for: chan
 ingests are always capped, and a refresh runs through to scoring.
 """
 
+import json
+
 import pytest
 
 from sloppy import refresh
 from sloppy.config import Settings
 from sloppy.ingest.pipeline import DEFAULT_SAMPLE_SIZE, DEFAULT_SAMPLE_WINDOW, IngestSummary
+from sloppy.models.train import ALL_FEATURES, METADATA_NUMERIC_FEATURES
 
 ACTIVE = Settings(
     _env_file=None, active_model_name="logistic_regression", active_model_version="v1"
@@ -74,6 +77,92 @@ def test_score_with_active_model_scores_with_the_configured_model(monkeypatch):
     assert captured["model_name"] == "logistic_regression"
     assert captured["model_version"] == "v1"
     assert captured["video_ids"] == ["v1", "v2"]
+
+
+def _write_model_metadata(root, name, version, features):
+    model_dir = root / name / version
+    model_dir.mkdir(parents=True)
+    (model_dir / "metadata.json").write_text(json.dumps({"features": features}), encoding="utf-8")
+
+
+@pytest.fixture
+def artifacts(tmp_path, monkeypatch):
+    monkeypatch.setattr(refresh, "DEFAULT_MODEL_ARTIFACTS_DIR", tmp_path)
+    return tmp_path
+
+
+def test_a_metadata_only_model_needs_neither_nlp_nor_vision_features(artifacts):
+    _write_model_metadata(
+        artifacts, "logistic_regression", "v1", METADATA_NUMERIC_FEATURES + ["genre"]
+    )
+    assert refresh.active_model_feature_needs(ACTIVE) == (False, False)
+
+
+def test_a_model_using_a_text_feature_needs_the_nlp_step(artifacts):
+    _write_model_metadata(
+        artifacts, "logistic_regression", "v1", METADATA_NUMERIC_FEATURES + ["sentiment_mean"]
+    )
+    assert refresh.active_model_feature_needs(ACTIVE) == (True, False)
+
+
+def test_a_model_using_a_clip_feature_needs_the_vision_step(artifacts):
+    _write_model_metadata(
+        artifacts, "logistic_regression", "v1", METADATA_NUMERIC_FEATURES + ["clip_clickbait_score"]
+    )
+    assert refresh.active_model_feature_needs(ACTIVE) == (False, True)
+
+
+def test_the_full_feature_set_needs_both(artifacts):
+    _write_model_metadata(artifacts, "logistic_regression", "v1", ALL_FEATURES)
+    assert refresh.active_model_feature_needs(ACTIVE) == (True, True)
+
+
+def test_unknown_situations_compute_everything_as_before(artifacts):
+    # no active model configured
+    assert refresh.active_model_feature_needs(NO_MODEL) == (True, True)
+    # configured, but the artifact is missing
+    assert refresh.active_model_feature_needs(ACTIVE) == (True, True)
+    # artifact present but unreadable / malformed
+    model_dir = artifacts / "logistic_regression" / "v1"
+    model_dir.mkdir(parents=True)
+    (model_dir / "metadata.json").write_text("not json", encoding="utf-8")
+    assert refresh.active_model_feature_needs(ACTIVE) == (True, True)
+    (model_dir / "metadata.json").write_text("{}", encoding="utf-8")  # no "features" key
+    assert refresh.active_model_feature_needs(ACTIVE) == (True, True)
+
+
+def test_refresh_channel_skips_feature_steps_the_active_model_does_not_use(monkeypatch):
+    calls = []
+    _patch_pipeline(monkeypatch, calls, IngestSummary(channel_id="UC_x", videos_upserted=2))
+    monkeypatch.setattr(refresh, "active_model_feature_needs", lambda settings: (False, False))
+
+    result = refresh.refresh_channel(ACTIVE, "@chan")
+
+    assert [c[0] for c in calls] == ["ingest", "score"]  # no nlp, no vision
+    assert result.features_skipped == ["nlp", "vision"]
+    assert (result.nlp_processed, result.vision_processed, result.scored) == (0, 0, 2)
+
+
+def test_refresh_video_skips_feature_steps_the_active_model_does_not_use(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        refresh,
+        "ingest_video",
+        lambda settings, vid: IngestSummary(channel_id="UC_x", videos_upserted=1),
+    )
+    monkeypatch.setattr(refresh, "active_model_feature_needs", lambda settings: (False, True))
+    monkeypatch.setattr(
+        refresh, "compute_nlp_features", lambda **kw: calls.append("nlp") or [("abc", 1)]
+    )
+    monkeypatch.setattr(
+        refresh, "compute_vision_features", lambda settings, **kw: calls.append("vision") or ["abc"]
+    )
+    monkeypatch.setattr(refresh, "score_videos", lambda **kw: calls.append("score") or ["abc"])
+
+    result = refresh.refresh_video(ACTIVE, "abc")
+
+    assert calls == ["vision", "score"]
+    assert result.features_skipped == ["nlp"]
 
 
 def _patch_pipeline(monkeypatch, calls, summary):

@@ -164,7 +164,12 @@ def train_model(
     )
 
 
-def save_model(trained: TrainedModel, artifacts_dir: Path, train_row_count: int) -> Path:
+def save_model(
+    trained: TrainedModel,
+    artifacts_dir: Path,
+    train_row_count: int,
+    feature_group: str = "all",
+) -> Path:
     model_dir = artifacts_dir / trained.name / trained.version
     model_dir.mkdir(parents=True, exist_ok=True)
 
@@ -174,6 +179,9 @@ def save_model(trained: TrainedModel, artifacts_dir: Path, train_row_count: int)
     metadata = {
         "model_name": trained.name,
         "model_version": trained.version,
+        # which FEATURE_GROUPS entry the model was trained on ("metadata" needs no NLP or
+        # CLIP features, so scoring a new video with it needs no model loading).
+        "feature_group": feature_group,
         "features": trained.all_features,
         "numeric_features": trained.numeric_features,
         "categorical_features": trained.categorical_features,

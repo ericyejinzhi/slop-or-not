@@ -852,6 +852,12 @@ def train_command(
     model: str = typer.Option("both", help="'logistic_regression', 'xgboost', or 'both'"),
     splits_csv: Path = typer.Option(DEFAULT_SPLITS_CSV),  # noqa: B008
     artifacts_dir: Path = typer.Option(DEFAULT_MODEL_ARTIFACTS_DIR),  # noqa: B008
+    feature_group: str = typer.Option(
+        "all",
+        help=f"Feature set: one of {', '.join(FEATURE_GROUPS)}. 'metadata' needs no NLP or CLIP "
+        "features, so newly ingested channels can be trained on and scored without the slow "
+        "feature step.",
+    ),
 ) -> None:
     """Train the baseline model(s) on data/splits.csv, persist the artifact, and score
     every labeled video into video_scores. Run `slop model evaluate` afterward to see
@@ -863,6 +869,13 @@ def train_command(
             f"[FAIL] --model must be 'both' or one of {MODEL_NAMES}, got {model!r}", fg="red"
         )
         raise typer.Exit(1)
+    if feature_group not in FEATURE_GROUPS:
+        typer.secho(
+            f"[FAIL] --feature-group must be one of {tuple(FEATURE_GROUPS)}, got {feature_group!r}",
+            fg="red",
+        )
+        raise typer.Exit(1)
+    numeric_features, categorical_features = FEATURE_GROUPS[feature_group]
 
     if not splits_csv.exists():
         typer.secho(f"[FAIL] {splits_csv} not found - run `slop label make-splits` first", fg="red")
@@ -884,11 +897,21 @@ def train_command(
     model_names = MODEL_NAMES if model == "both" else (model,)
 
     for model_name in model_names:
-        typer.secho(f"Training {model_name} on {len(train_df)} row(s)...", bold=True)
+        typer.secho(
+            f"Training {model_name} ({feature_group} features) on {len(train_df)} row(s)...",
+            bold=True,
+        )
         run = start_run(settings, config={"model_name": model_name, "train_rows": len(train_df)})
 
-        trained = train_model(model_name, train_df)
-        model_path = save_model(trained, artifacts_dir, train_row_count=len(train_df))
+        trained = train_model(
+            model_name,
+            train_df,
+            numeric_features=numeric_features,
+            categorical_features=categorical_features,
+        )
+        model_path = save_model(
+            trained, artifacts_dir, train_row_count=len(train_df), feature_group=feature_group
+        )
         typer.echo(f"  saved to {model_path}")
 
         scores = score_dataframe(trained, df)
