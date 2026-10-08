@@ -73,10 +73,7 @@ handle,expected_lean,genre,source_of_discovery,notes
 @teenz,slop,Entertainment,forum/report: Wikipedia (TheSoul Group),Teen-Z: TheSoul-owned content-farm channel
 @123go_,slop,Howto & Style,forum/report: Wikipedia (TheSoul Group),123 GO!: TheSoul-owned content-farm channel. One of dozens of localized 123 GO! spin-offs.
 @LankyBox,slop,Kids,forum/report: Elevate Creatives; Highline student paper,LankyBox: Called 'YouTube's biggest content farm'; accused of copying smaller creators. ~17.5 uploads/week; 30-day views ~311M as of Jan 2025. Refresh before use.
-@animalstots,slop,Kids,"forum/report: Carla Engelbrecht, '5 kinds of kids slop'","Animals Tots: 'More is more' kids slop: thousands of videos in months. ~4,955 videos in 14 months but only 1.4M lifetime views."
-@lalaloonytv,slop,Kids,"forum/report: Carla Engelbrecht, '5 kinds of kids slop'","Lala Loony TV: 'More is more' kids slop: automated video factory. 6,400+ videos in 14 months."
 @BrightTunes-i7m,slop,Kids,"forum/report: Carla Engelbrecht, '5 kinds of kids slop'",Bright Tunes: 'More is more' kids slop. ~250 views per video.
-@jircreation,slop,Kids,"forum/report: Carla Engelbrecht, '5 kinds of kids slop'","JIR Creation: 'CocoFelon': filters Cocomelon videos to dodge Content ID. Few videos, high subs: re-upload pattern rather than mass upload."
 @FantasticFunTimes,slop,Kids,"forum/report: Carla Engelbrecht, '5 kinds of kids slop'",Fantastic Fun Times: 'Confidently wrong': teaches false letter associations with undisclosed AI. Low-view example.
 @revengerealm,slop,Entertainment,forum/report: Ark newsletter (YouTube policy coverage),Revenge Realm: Scraped Reddit revenge stories with AI voiceover. No uploads in window.
 @donylorenco,slop,News & Politics,forum/report: DFRLab (Mar 2026),Cubo Thompson: Part of a 26-channel AI war-news network. DFRLab cited the handle with 1M+ subs; display name has since changed.
@@ -97,7 +94,6 @@ handle,expected_lean,genre,source_of_discovery,notes
 @DeepBibleStories,slop,Education,forum/report: 404 Media,"Deep Bible Stories: AI-narrated Bible story podcasts. 687K subs, 67.4M views, 297 videos; account dates from 2014."
 @ThePoweroftheWord-Official,slop,Education,forum/report: User Mag,"The Power of the Word: AI religious content, flagged as repeatedly recommended. 907K subs, 107M views from only 94 videos; created Feb 2024."
 @CourtroomConsequences,slop,News & Politics,forum/report: Indicator 'AI lawslop' investigation (Feb 2026),"Courtroom Consequences: AI fake-verdict courtroom dramas. 1.45M subs, 558M views, 900 videos."
-@courtdramastv,slop,News & Politics,forum/report: Indicator 'AI lawslop' investigation (Feb 2026),Court Drama (named 'CourtDramasTv' by Indicator): AI fake courtroom stories. 27.9K subs but 13.8M views in the last 14 days from 50 videos; spiky growth.
 @abandonedfilms,slop,Film & Animation,forum/report: The Current (YouTube AI slop coverage),"Abandoned Films: AI-made fake commercials/parody ads. 354K subs, 16.4M views, 65 videos; dormant."
 @thebedtimehistory-icdi,slop,Education,Social Blade search alongside the 404 Media AI sleep-history network (not named by a forum),"Bedtime & Historian: AI 'boring history for sleep' format. 104K subs, 11.3M views, 158 videos; created Jul 2025. Lower-confidence source."
 @dailytrendz,slop,Entertainment,forum/report: Sloptubers community list (Codeberg),"Daily TrendZ: listed as generating AI slop videos for entertainment. 2.15K subs, 852K views, 87 videos; low-view example."
