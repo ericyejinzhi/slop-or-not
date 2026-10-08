@@ -47,6 +47,21 @@ def canonical_labels(session: Session) -> dict[str, tuple[str, str]]:
     return canonical
 
 
+ALL_DATA_SPLIT = "all"
+
+
+def all_data_splits(canonical: dict[str, tuple[str, str]]) -> dict[str, tuple[str, str, str]]:
+    """video_id -> (channel_id, label, "all"): every labeled video in one split, in the
+    shape `assemble_dataset` takes. For fitting the FINAL model on all the data once the
+    setup has been chosen with cross-validation. The split is named "all", not "train", so
+    `slop model evaluate` (which looks for train/val/test rows) cannot mistake a model's
+    in-sample scores for held-out ones."""
+    return {
+        video_id: (channel_id, label, ALL_DATA_SPLIT)
+        for video_id, (channel_id, label) in canonical.items()
+    }
+
+
 @dataclass
 class ChannelLabelStats:
     channel_id: str

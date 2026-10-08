@@ -1,4 +1,18 @@
-from sloppy.label.split import assign_videos_to_splits
+from sloppy.label.split import ALL_DATA_SPLIT, all_data_splits, assign_videos_to_splits
+
+
+def test_all_data_splits_puts_every_labeled_video_in_one_split_named_all():
+    canonical = {"v1": ("c1", "up"), "v2": ("c1", "down"), "v3": ("c2", "up")}
+
+    splits = all_data_splits(canonical)
+
+    assert splits == {
+        "v1": ("c1", "up", "all"),
+        "v2": ("c1", "down", "all"),
+        "v3": ("c2", "up", "all"),
+    }
+    # deliberately not "train"/"val"/"test", so evaluate can't mistake in-sample scores
+    assert ALL_DATA_SPLIT not in ("train", "val", "test")
 
 
 def _canonical(n_channels: int = 10, per_channel: int = 10) -> dict[str, tuple[str, str]]:

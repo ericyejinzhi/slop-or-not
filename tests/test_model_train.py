@@ -147,6 +147,17 @@ def test_save_model_writes_artifact_and_metadata(tmp_path):
     assert metadata["train_row_count"] == len(df)
     assert metadata["features"] == ALL_FEATURES
     assert metadata["feature_group"] == "all"  # the default
+    assert metadata["training_data"] == "train_split"  # the default
+
+
+def test_save_model_records_when_a_model_was_fit_on_all_labeled_data(tmp_path):
+    df = _separable_dataframe()
+    trained = train_model("logistic_regression", df, version="test-version")
+
+    model_path = save_model(trained, tmp_path, train_row_count=len(df), training_data="all_labeled")
+
+    metadata = json.loads((model_path.parent / "metadata.json").read_text(encoding="utf-8"))
+    assert metadata["training_data"] == "all_labeled"
 
 
 def test_save_model_records_which_feature_group_the_model_was_trained_on(tmp_path):

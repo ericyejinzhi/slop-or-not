@@ -40,6 +40,8 @@ from sloppy.label.pool import (
     sample_pool,
 )
 from sloppy.label.split import (
+    ALL_DATA_SPLIT,
+    all_data_splits,
     assign_channels_to_splits,
     assign_videos_to_splits,
     canonical_labels,
@@ -860,6 +862,14 @@ def train_command(
         "features, so newly ingested channels can be trained on and scored without the slow "
         "feature step.",
     ),
+    all_data: bool = typer.Option(
+        False,
+        "--all-data",
+        help="Fit on EVERY labeled video instead of the train split - for the final model, "
+        "once the setup has been chosen with `slop model cv`. Needs no splits.csv. Its "
+        "val/test scores would be in-sample, so it cannot be evaluated with `slop model "
+        "evaluate`; use `slop model cv` for its expected quality.",
+    ),
 ) -> None:
     """Train the baseline model(s) on data/splits.csv, persist the artifact, and score
     every labeled video into video_scores. Run `slop model evaluate` afterward to see
@@ -879,19 +889,23 @@ def train_command(
         raise typer.Exit(1)
     numeric_features, categorical_features = FEATURE_GROUPS[feature_group]
 
-    if not splits_csv.exists():
+    if not all_data and not splits_csv.exists():
         typer.secho(f"[FAIL] {splits_csv} not found - run `slop label make-splits` first", fg="red")
         raise typer.Exit(1)
 
-    splits = load_splits(splits_csv)
     with session_scope() as session:
+        if all_data:
+            splits = all_data_splits(canonical_labels(session))
+        else:
+            splits = load_splits(splits_csv)
         df = assemble_dataset(session, splits)
 
     if df.empty:
-        typer.secho("No labeled videos found in splits.csv - nothing to train on.", fg="yellow")
+        source = "the database" if all_data else "splits.csv"
+        typer.secho(f"No labeled videos found in {source} - nothing to train on.", fg="yellow")
         raise typer.Exit(1)
 
-    train_df = df[df["split"] == "train"]
+    train_df = df if all_data else df[df["split"] == "train"]
     if train_df.empty:
         typer.secho("No rows in the train split - nothing to train on.", fg="red")
         raise typer.Exit(1)
@@ -899,8 +913,10 @@ def train_command(
     model_names = MODEL_NAMES if model == "both" else (model,)
 
     for model_name in model_names:
+        scope = "all labeled videos" if all_data else "the train split"
         typer.secho(
-            f"Training {model_name} ({feature_group} features) on {len(train_df)} row(s)...",
+            f"Training {model_name} ({feature_group} features) on {len(train_df)} row(s) "
+            f"({scope})...",
             bold=True,
         )
         run = start_run(settings, config={"model_name": model_name, "train_rows": len(train_df)})
@@ -912,9 +928,19 @@ def train_command(
             categorical_features=categorical_features,
         )
         model_path = save_model(
-            trained, artifacts_dir, train_row_count=len(train_df), feature_group=feature_group
+            trained,
+            artifacts_dir,
+            train_row_count=len(train_df),
+            feature_group=feature_group,
+            training_data="all_labeled" if all_data else "train_split",
         )
         typer.echo(f"  saved to {model_path}")
+        if all_data:
+            typer.secho(
+                "  fit on every labeled video: no held-out data remains, so estimate its "
+                "quality with `slop model cv`, not `slop model evaluate`.",
+                fg="yellow",
+            )
 
         scores = score_dataframe(trained, df)
         with session_scope() as session:
@@ -1165,6 +1191,15 @@ def evaluate_command(
     df = pd.DataFrame.from_records(records)
     if df.empty:
         typer.secho("No scored videos with a canonical (non-skip) label found.", fg="yellow")
+        raise typer.Exit(1)
+
+    if (df["split"] == ALL_DATA_SPLIT).any():
+        typer.secho(
+            f"[FAIL] {model_name} v{model_version} was fit on every labeled video "
+            "(`slop model train --all-data`), so it has no held-out data to evaluate on. "
+            "Estimate its quality with `slop model cv` instead.",
+            fg="red",
+        )
         raise typer.Exit(1)
 
     train_y = df[df["split"] == "train"]["y"]

@@ -63,7 +63,35 @@ New flags: `--ablation` (compare all feature groups; ignores `--feature-group`) 
 
 **Acting on it (2026-10-07):** `slop model train --feature-group metadata` now trains on the 17 metadata features only (default is still `all`), and records `feature_group` in the model's `metadata.json`. A real metadata-only logistic regression (`20261007-200744`) scored val PR-AUC 0.732 / F1 0.698 and test PR-AUC 0.830 / F1 0.714 on the channel-grouped splits, versus 0.781 / 0.706 and 0.807 / 0.727 for the all-features model (`20261007-194834`): comparable, not clearly better or worse, in line with the ablation. Because it needs no NLP or CLIP features, new channels can be ingested, labeled, trained on and scored without the multi-hour feature step, and refreshing a channel skips those steps (`docs/writeups/phase-7/stage-4-refresh-flow.md`). Not promoted; the active model still uses all features.
 
-**What this changes:** the expensive NLP and vision feature computation is not demonstrably earning its keep yet. Do not delete it - re-run `slop model cv --ablation` once there are 100+ labeled channels, when the extra features have a chance to pay off. The currently active model (`logistic_regression/20261006-201143`) was trained before the scaler existed; retraining it would apply the improvement.
+**What this changed (superseded by the next section):** at 58 channels the NLP and vision features were not demonstrably earning their keep, and the plan was to re-run the ablation at 100+ labeled channels.
+
+## Update 2026-10-08: 103 channels, and a valid ablation
+
+The labeled corpus grew to 103 channels / 1,054 videos (49 slop channels, 55 not; slop is now 47% of videos, up from 31%). All numbers: channel-grouped, 5 folds x 3 repeats, same seed.
+
+**Metadata features only:**
+
+| Model | PR-AUC | F1 | Baseline PR-AUC |
+|---|---|---|---|
+| Logistic regression | 0.786 +/- 0.073 | 0.709 +/- 0.068 | 0.461 |
+| XGBoost | 0.774 +/- 0.092 | 0.665 +/- 0.083 | 0.461 |
+
+Read the PR-AUC against the baseline, which rose from 0.31 to 0.46 purely because the classes are now balanced: the lift over baseline is about +0.33, about the same as at 58 channels (+0.35). More channels steadied the estimate; they did not make the model discriminate better. At the default 0.5 threshold logistic regression catches 72% of slop videos at 70% precision; the F1-best threshold (0.3, F1 0.728) is not meaningfully better.
+
+**Feature-group ablation, now valid** (every video has NLP and CLIP features):
+
+| Model | metadata (17) | + text (33) | + vision = all (38) |
+|---|---|---|---|
+| Logistic regression PR-AUC | 0.786 | 0.772 (-0.014, [0.049]) | **0.805** (+0.020, [0.064]) |
+| XGBoost PR-AUC | 0.774 | 0.773 (-0.001, [0.077]) | **0.802** (+0.028, [0.080]) |
+
+(Brackets: standard deviation of the paired per-fold change.) The full feature set is nominally best for both models, the 58-channel ablation's conclusion reversed, and the gain appears only when the CLIP thumbnail features are added (text alone adds nothing). The paired standard deviation is larger than the change, so treat "all features help by about 0.02-0.03" as plausible, not established; the reversal itself shows how noisy these comparisons are.
+
+**An invalid ablation to avoid:** run while 426 videos still had no NLP/CLIP features (the new channels' videos), the text and all rows compare 646 videos with features against 426 without, and the missing values get median-imputed. Always compute features for new channels before ablating (`slop features compute-nlp --only-missing`, then `compute-vision --only-missing`).
+
+**Single splits mislead:** with about 15 channels per held-out split, the metadata-only logistic regression scored PR-AUC 0.872 on val but 0.607 on test of the same split. Use cross-validation for decisions.
+
+**The deployed model** is now fit on all labeled videos: `slop model train --all-data` (see `docs/writeups/TODO.md` item 15). It has no held-out data by construction, so its expected quality is the cross-validated figure above (all features: PR-AUC about 0.80, F1 about 0.73).
 
 ## What to look out for
 

@@ -169,6 +169,7 @@ def save_model(
     artifacts_dir: Path,
     train_row_count: int,
     feature_group: str = "all",
+    training_data: str = "train_split",
 ) -> Path:
     model_dir = artifacts_dir / trained.name / trained.version
     model_dir.mkdir(parents=True, exist_ok=True)
@@ -182,6 +183,10 @@ def save_model(
         # which FEATURE_GROUPS entry the model was trained on ("metadata" needs no NLP or
         # CLIP features, so scoring a new video with it needs no model loading).
         "feature_group": feature_group,
+        # "train_split" = fit on the train split only (held-out val/test scores are real);
+        # "all_labeled" = fit on every labeled video (the final model; its val/test scores
+        # would be in-sample, so estimate its quality with `slop model cv` instead).
+        "training_data": training_data,
         "features": trained.all_features,
         "numeric_features": trained.numeric_features,
         "categorical_features": trained.categorical_features,

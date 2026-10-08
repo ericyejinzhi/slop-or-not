@@ -68,17 +68,17 @@ from day one" design goal.
 
 ## Results
 
-**A first real-data result exists, and it is modest.** As of 2026-10-06 the pipeline has run
-end to end on real YouTube data: 60 channels, 626 videos, 646 channel-level labels (about
-32% slop), then splits, NLP and vision features, and both baseline models. The honest
-estimate, from stratified k-fold cross-validation grouped by channel (so every test channel
-is one the model never trained on): PR-AUC 0.59 +/- 0.13 for XGBoost and 0.65 +/- 0.10 for
-logistic regression (F1 0.51 and 0.62), against a majority-class baseline of 0.31 (F1 0).
-That is real signal on unseen channels, but noisy and far from reliable, with only about 58
-labeled channels behind it. A feature-group ablation under the same cross-validation found
-that the 17 metadata features alone do as well as or slightly better than adding the text
-and vision features (logistic regression 0.66 vs 0.65), so at this data size the NLP and CLIP
-features are not yet pulling their weight. An earlier by-video split scored
+**Real-data results exist, and they are modest.** As of 2026-10-08 the pipeline has run end
+to end on real YouTube data: 105 channels, 1,072 videos, 1,054 labeled in 103 channels (47%
+of videos judged slop; labels are per channel). The honest estimate comes from stratified
+k-fold cross-validation grouped by channel, so every test channel is one the model never
+trained on: with all features, logistic regression scores PR-AUC about 0.80 and F1 about 0.73
+against a majority-class baseline of 0.46 (the baseline is high because the classes are
+nearly balanced; the lift over it is about +0.33). The 17 metadata features alone score 0.79,
+and XGBoost does no better than logistic regression. A feature-group ablation found the full
+feature set nominally best (+0.02 to +0.03 PR-AUC, from the CLIP thumbnail features; text
+features add nothing), but that difference is within the fold-to-fold noise. That is real
+signal on unseen channels, but noisy and far from reliable. An earlier by-video split scored
 XGBoost at PR-AUC 0.99; that figure was inflated by channel leakage (labels are per channel,
 so the model could just recognize channels) and should be ignored. Details:
 [docs/writeups/phase-3/cross-validation.md](docs/writeups/phase-3/cross-validation.md) and
