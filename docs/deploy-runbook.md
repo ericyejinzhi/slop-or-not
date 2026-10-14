@@ -38,6 +38,12 @@ terraform output                  # rds_endpoint, app_public_ip, app_instance_id
 ```
 Bucket names must be globally unique (lowercase letters, digits, hyphens). `terraform.tfvars` is gitignored; the password only lives in your shell and in the Terraform state file (`terraform.tfstate`, also gitignored: do not commit or share it). If you close the terminal, export `TF_VAR_db_password` again before any later `terraform` command.
 
+**A passing plan does not prove the apply will work.** `terraform plan` never asks AWS whether a value is allowed, only `apply` does. The first real apply failed this way: the database was pinned to Postgres `16.4`, which RDS in `us-east-2` no longer offers (`InvalidParameterCombination: Cannot find version 16.4 for postgres`). The Terraform now asks for just major version `16` so RDS picks its current default. Terraform applies as much as it can, so a failure like that leaves the other resources created; fix the cause and run `terraform plan -out=tfplan` and `terraform apply tfplan` again, and only the missing piece is added. You can check what AWS offers yourself (read-only):
+```
+aws rds describe-db-engine-versions --engine postgres --default-only --engine-version 16 --query "DBEngineVersions[].EngineVersion" --output text --region us-east-2
+aws rds describe-orderable-db-instance-options --engine postgres --engine-version 16.13 --db-instance-class db.t4g.micro --region us-east-2 --query "OrderableDBInstanceOptions[].DBInstanceClass" --output text
+```
+
 ## Part D - Move the data (laptop)
 ```
 # 1. a snapshot of the local database (no raw comments; only the active model's scores)
@@ -107,3 +113,5 @@ This deletes the database **without a final snapshot** (everything in it is a co
 | API can't reach the database | wrong `POSTGRES_HOST` (host only, no `:5432`), or `POSTGRES_SSLMODE` missing |
 | `docker compose` starts postgres/minio containers | you forgot the `-f docker-compose.aws.yml` |
 | Session Manager "agent not ready" | the instance is still starting; wait a few minutes |
+| `apply` fails with `InvalidParameterCombination: Cannot find version ... for postgres` | the pinned engine version was retired; use major version `16` (see Part C) and apply again |
+| `apply` failed partway | normal: what was created stays created. Fix the cause, then plan and apply again; Terraform only adds what is missing |
