@@ -15,3 +15,6 @@ crash.*.log
 *.tfvars
 *.tfvars.json
 !*.tfvars.example
+
+# `terraform plan -out=tfplan` (the runbook's name) has no extension; it holds db_password.
+tfplan
