@@ -68,6 +68,7 @@ from sloppy.models.train import (
     train_model,
 )
 from sloppy.storage import ensure_bucket, get_s3_client
+from sloppy.storage_copy import copy_objects, get_destination_client
 
 app = typer.Typer(no_args_is_help=True, help="Slop-or-not: YouTube content quality classifier.")
 ingest_app = typer.Typer(no_args_is_help=True, help="YouTube ingestion commands (Phase 1).")
@@ -75,11 +76,13 @@ label_app = typer.Typer(no_args_is_help=True, help="Labeling commands (Phase 2).
 model_app = typer.Typer(no_args_is_help=True, help="Baseline model commands (Phase 3).")
 features_app = typer.Typer(no_args_is_help=True, help="NLP/vision feature commands (Phase 4).")
 orchestrate_app = typer.Typer(no_args_is_help=True, help="Prefect flow triggers (Phase 7).")
+deploy_app = typer.Typer(no_args_is_help=True, help="Moving local data to a deployment (Phase 8).")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(label_app, name="label")
 app.add_typer(model_app, name="model")
 app.add_typer(features_app, name="features")
 app.add_typer(orchestrate_app, name="orchestrate")
+app.add_typer(deploy_app, name="deploy")
 
 DEFAULT_SEED_CSV = Path("data/seed_channels.csv")
 DEFAULT_SPLITS_CSV = Path("data/splits.csv")
@@ -1481,6 +1484,59 @@ def serve_command(
     refreshes. Set PREFECT_API_URL to the docker-compose server first, or the schedule
     and flow-run history land in a throwaway ephemeral server instead."""
     refresh_all_tracked_channels_flow.serve(name="daily-tracked-channels-refresh", cron=cron)
+
+
+@deploy_app.command("copy-thumbnails")
+def copy_thumbnails_command(
+    dest_bucket: str = typer.Option(
+        ..., help="Existing destination bucket (e.g. the thumbnails bucket Terraform created)."
+    ),
+    dest_endpoint_url: str | None = typer.Option(
+        None, help="Only for S3-compatible targets such as MinIO; leave unset for real AWS S3."
+    ),
+    dest_region: str = typer.Option("us-east-1", help="Destination bucket's region."),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report what would be copied without writing anything."
+    ),
+) -> None:
+    """Copy every thumbnail the database references from the local MinIO to another
+    bucket, keeping the same keys. Safe to re-run: objects already at the destination with
+    the same size are skipped. Destination credentials: DEST_AWS_ACCESS_KEY_ID and
+    DEST_AWS_SECRET_ACCESS_KEY if set, otherwise boto3's default chain (never the MinIO keys
+    in .env). Remember the database rows still name the SOURCE bucket; the snapshot import
+    script rewrites them."""
+    settings = get_settings()
+    with session_scope() as session:
+        objects = [
+            (bucket, key) for bucket, key in session.query(Thumbnail.s3_bucket, Thumbnail.s3_key)
+        ]
+    if not objects:
+        typer.secho("No thumbnails recorded in the database - nothing to copy.", fg="yellow")
+        raise typer.Exit(1)
+
+    destination = get_destination_client(dest_endpoint_url, dest_region)
+    try:
+        destination.head_bucket(Bucket=dest_bucket)
+    except ClientError as exc:
+        cli_ui.fail(f"cannot use destination bucket {dest_bucket!r}: {exc}")
+        raise typer.Exit(1) from exc
+
+    with cli_ui.spinner(f"Copying {len(objects)} thumbnail(s) to {dest_bucket}..."):
+        result = copy_objects(
+            get_s3_client(settings), destination, dest_bucket, objects, dry_run=dry_run
+        )
+
+    verb = "would copy" if dry_run else "copied"
+    cli_ui.ok(
+        f"{verb} {result.copied} ({result.bytes_copied / 1e6:.1f} MB), "
+        f"{result.skipped} already there"
+    )
+    for entry in result.missing:
+        cli_ui.warn(f"not in the source bucket: {entry}")
+    for entry in result.failed:
+        cli_ui.fail(entry)
+    if result.failed:
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":

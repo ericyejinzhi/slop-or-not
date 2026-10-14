@@ -23,6 +23,9 @@ data/*
 models_artifacts/
 wandb/
 
+# Database snapshots (scripts/export-snapshot.sh) contain the labels - never commit one
+*.dump
+
 # Notebooks
 .ipynb_checkpoints/
 

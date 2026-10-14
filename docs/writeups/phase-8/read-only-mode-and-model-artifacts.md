@@ -35,7 +35,7 @@ $ uv run slop model publish --model-name logistic_regression --model-version 202
 - **`model.joblib` is a pickle.** Loading it runs whatever code it contains, so whoever can write to the models bucket can run code on every server that loads from it. That is why the bucket is private and the instance role is read-only; publish with your own credentials from your own machine. There is no signature or checksum check, because anyone who can replace the model can replace its checksum too.
 - **Read-only mode only restricts writes.** Every GET stays open, including the data behind the labeled-videos list (your own labels). If those should not be public either, that is a separate decision.
 - **A read-only deployment does not need the model files at all** when scores come from the `video_scores` table (which is what the API serves). The model is only needed to score newly ingested videos, which a read-only deployment cannot ingest.
-- **The Terraform additions are unvalidated**: the `terraform` binary was not available, so `terraform validate` and `terraform fmt -check` were not run on them (see the Terraform README).
+- **The Terraform additions are validated for syntax only**: when first written the `terraform` binary was not available; on 2026-10-14 `terraform init -backend=false`, `validate` (0 errors, 0 warnings) and `fmt -check` all passed. No `plan` or `apply` has been run (no AWS credentials), so the IAM policy and S3 behavior are untested against real AWS.
 - **Not exercised against real AWS.** Publish/fetch were tested against the local MinIO (same boto3 API), which is a faithful stand-in for the code path but not for IAM policy behavior.
 
 ## How to run tests properly
