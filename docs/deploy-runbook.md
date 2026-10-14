@@ -112,6 +112,7 @@ This deletes the database **without a final snapshot** (everything in it is a co
 | API errors mentioning `localhost:9000` or "Invalid endpoint" | `S3_ENDPOINT_URL` deleted instead of blank in the server `.env` |
 | API can't reach the database | wrong `POSTGRES_HOST` (host only, no `:5432`), or `POSTGRES_SSLMODE` missing |
 | `docker compose` starts postgres/minio containers | you forgot the `-f docker-compose.aws.yml` |
-| Session Manager "agent not ready" | the instance is still starting; wait a few minutes |
+| Session Manager "agent not ready", or `aws ssm describe-instance-information` returns nothing, for more than ~10 minutes | The first deployment's server was built from the **Minimal** Amazon Linux 2023 image, which has no SSM agent, because the image was found by a loose name search. Fixed 2026-10-14 (the image now comes from AWS's own pointer for the standard edition). If your server predates the fix, replace it: `terraform apply -replace=aws_instance.app`. Check what a server runs with `aws ec2 describe-instances --instance-ids <id> --query "Reservations[0].Instances[0].ImageId"` then `aws ec2 describe-images --image-ids <ami>`; the name must NOT contain `minimal` |
+| Session Manager "agent not ready" for the first few minutes | the instance is still starting; wait |
 | `apply` fails with `InvalidParameterCombination: Cannot find version ... for postgres` | the pinned engine version was retired; use major version `16` (see Part C) and apply again |
 | `apply` failed partway | normal: what was created stays created. Fix the cause, then plan and apply again; Terraform only adds what is missing |

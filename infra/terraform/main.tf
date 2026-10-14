@@ -33,14 +33,14 @@ data "aws_subnets" "default" {
   }
 }
 
-data "aws_ami" "amazon_linux" {
-  most_recent = true
-  owners      = ["amazon"]
-
-  filter {
-    name   = "name"
-    values = ["al2023-ami-*-x86_64"]
-  }
+# The STANDARD Amazon Linux 2023 image, looked up through AWS's own published pointer.
+# This used to be a name search (`al2023-ami-*-x86_64` + most_recent), which also matches
+# the *minimal* and ECS editions; the minimal one was newest and was picked. It has no SSM
+# agent, so Session Manager (the only way into the instance - there is no key pair) could
+# never connect. The pointer name below is the standard edition; `...-minimal-...` is the
+# other one. The parameter is a public AWS value, not a secret (hence insecure_value).
+data "aws_ssm_parameter" "al2023_ami" {
+  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64"
 }
 
 locals {

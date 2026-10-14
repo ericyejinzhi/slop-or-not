@@ -103,7 +103,7 @@ resource "aws_iam_instance_profile" "app" {
 }
 
 resource "aws_instance" "app" {
-  ami                    = data.aws_ami.amazon_linux.id
+  ami                    = data.aws_ssm_parameter.al2023_ami.insecure_value
   instance_type          = var.app_instance_type
   subnet_id              = data.aws_subnets.default.ids[0]
   vpc_security_group_ids = [aws_security_group.app.id]
@@ -125,5 +125,13 @@ resource "aws_instance" "app" {
   # automated as user_data here - this reference IaC is never applied, and baking a real
   # deployment script into a Terraform default would be untested, unreviewed shell code
   # nobody has actually run.
+  # The image lookup above follows AWS's "latest" pointer, so it changes whenever AWS
+  # publishes a new Amazon Linux build. Without this, the next `terraform apply` after that
+  # would REPLACE the instance and wipe whatever was set up on it (Docker, .env, the app).
+  # To deliberately move to a newer image: `terraform apply -replace=aws_instance.app`.
+  lifecycle {
+    ignore_changes = [ami]
+  }
+
   tags = merge(local.common_tags, { Name = "${var.project_name}-app" })
 }
