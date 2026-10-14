@@ -28,15 +28,17 @@ terraform plan -var="db_password=placeholder"
 | `models_bucket_name` | `S3_BUCKET_MODELS` (+ `FETCH_MODEL_FROM_S3=true`) | Globally unique like the thumbnails bucket (change the placeholder default). Publish a trained model with your OWN AWS credentials: `slop model publish --model-name ... --model-version ...`; the instance role can only read it |
 | - | `READ_ONLY=true` | For a public deployment: the API then rejects every non-GET request (no ingesting, no label writes) and the dashboard hides those controls |
 | `rds_endpoint` | `POSTGRES_HOST`/`POSTGRES_PORT` | `rds_endpoint` is `host:port`; split across the two variables |
-| (the EC2 instance's IAM role) | leave `S3_ACCESS_KEY`/`S3_SECRET_KEY` **unset** | `src/sloppy/storage.py::get_s3_client` (Phase 8 Stage 1) falls back to boto3's default credential chain - which resolves the instance's IAM role automatically - only when these are unset, not blank |
+| (the EC2 instance's IAM role) | `S3_ACCESS_KEY=` and `S3_SECRET_KEY=` set **blank** | Blank is read as "not set" (`Settings` turns a blank value into None), so `get_s3_client` passes no explicit keys and boto3's default credential chain resolves the instance's IAM role. Do NOT delete or comment out the lines: an absent variable falls back to the local MinIO defaults, MinIO's login keys included |
 | - | `POSTGRES_SSLMODE=require` | RDS should always be connected to over TLS |
-| - | `S3_ENDPOINT_URL=` (unset/commented out) | Leaving this unset lets boto3 resolve the real regional S3 endpoint instead of a hardcoded MinIO-style one |
+| - | `S3_ENDPOINT_URL=` set **blank** | Blank means no custom endpoint, so boto3 resolves the real regional S3 endpoint. (Before 2026-10-14 the docs said "leave it unset", which silently selected `http://localhost:9000`, and a blank value crashed boto3 with "Invalid endpoint".) |
+| - | the whole server `.env` | A complete template is `.env.aws.example` at the repo root |
+| - | start the stack with `docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --build api web` | The base compose file hard-codes the local `postgres`/`minio` containers into the api (`environment:` beats `.env`) and makes it depend on them; the AWS override removes both, and publishes the web container on port 80 to match the security group |
 | - | `AWS_REGION` | Should match `var.aws_region` |
 
 ## What's deliberately not automated here
 
 - **Enabling pgvector on the RDS instance** - `CREATE EXTENSION vector;` is a SQL statement run against the database after it exists, not a Terraform resource. This is a manual step, tracked in `docs/writeups/TODO.md`.
-- **Deploying the application onto the EC2 instance** - `ec2.tf` deliberately leaves `user_data` unset rather than baking in an untested, unreviewed shell script. The real steps (install Docker, clone the repo, configure `.env`, `docker compose up -d --build api web`) are documented in `docs/writeups/phase-8`'s stage write-up instead, to be run and verified manually once this is actually applied.
+- **Deploying the application onto the EC2 instance** - `ec2.tf` deliberately leaves `user_data` unset rather than baking in an untested, unreviewed shell script. The ordered steps are in `docs/deploy-runbook.md`. To log into the instance, use Session Manager (AWS console -> EC2 -> select the instance -> Connect -> Session Manager, or `aws ssm start-session --target <app_instance_id>`): the instance role carries the `AmazonSSMManagedInstanceCore` policy. There is deliberately no SSH key pair; the port-22 rule and `ssh_ingress_cidr` remain but are not needed.
 - **A remote Terraform state backend** (e.g. an S3 bucket + DynamoDB lock table for team use) - unnecessary for a reference config that has never been applied by anyone; local state is the right default until that changes.
 - **DNS/TLS** (a real domain, an ACM certificate, HTTPS) - the roadmap's own verify bullet is "public URL serves the dashboard end-to-end," achievable via the EC2 instance's plain public IP over HTTP for a first pass; a real domain+TLS setup is a reasonable follow-up, not blocking.
 

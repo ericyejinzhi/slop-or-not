@@ -13,6 +13,11 @@ output "rds_endpoint" {
   value       = aws_db_instance.postgres.endpoint
 }
 
+output "app_instance_id" {
+  description = "EC2 instance id - open a shell with: AWS console -> EC2 -> Instances -> select it -> Connect -> Session Manager (or `aws ssm start-session --target <id>`)"
+  value       = aws_instance.app.id
+}
+
 output "app_public_ip" {
   description = "Public IP of the EC2 instance running api+web via docker-compose"
   value       = aws_instance.app.public_ip

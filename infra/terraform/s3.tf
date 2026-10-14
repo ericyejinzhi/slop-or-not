@@ -3,8 +3,9 @@
 # presigned URLs or the app instance's IAM role, never via public bucket access.
 
 resource "aws_s3_bucket" "thumbnails" {
-  bucket = var.thumbnails_bucket_name
-  tags   = local.common_tags
+  bucket        = var.thumbnails_bucket_name
+  force_destroy = var.force_destroy_buckets
+  tags          = local.common_tags
 }
 
 resource "aws_s3_bucket_public_access_block" "thumbnails" {
@@ -33,8 +34,9 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "thumbnails" {
 # credentials, never from the app instance.
 
 resource "aws_s3_bucket" "models" {
-  bucket = var.models_bucket_name
-  tags   = local.common_tags
+  bucket        = var.models_bucket_name
+  force_destroy = var.force_destroy_buckets
+  tags          = local.common_tags
 }
 
 resource "aws_s3_bucket_public_access_block" "models" {

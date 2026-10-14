@@ -13,6 +13,12 @@ Two small, additive `Settings` changes (`src/sloppy/config.py`), both backward-c
 
 A third, related fix: **`s3_access_key`/`s3_secret_key` are now `str | None`**, and `get_s3_client` only passes `aws_access_key_id`/`aws_secret_access_key` to `boto3.client(...)` when both are actually set. Previously they were always passed (even as blank strings), which would silently override boto3's own default credential chain - meaning a real EC2 deployment granting S3 access via an IAM instance role (the secure, no-long-lived-keys-on-disk approach) would never actually get to use that role, since the explicit (blank) credentials would take precedence. Leaving both unset in a production `.env` now correctly lets boto3 fall through to the instance role automatically.
 
+## Update 2026-10-14 - "leave it unset" did not work; blank now means unset
+
+This stage's advice was to leave `S3_ENDPOINT_URL` (and the keys) **unset** for real AWS S3. Checked before the first deployment, that fails in both directions: the `Settings` defaults are the local MinIO values, so an **absent** variable selects `http://localhost:9000` (and MinIO's login keys, which would then be sent to AWS), while a **blank** variable (`S3_ENDPOINT_URL=`) reached boto3 as an empty string and raised `Invalid endpoint`. The `None`-able fields described above worked in code (`Settings(s3_endpoint_url=None)`) but there was no way to express `None` through an environment variable or `.env`.
+
+Fix: a validator on `s3_endpoint_url`, `s3_access_key` and `s3_secret_key` turns a blank (or whitespace-only) value into `None`. For real AWS the server's `.env` now sets those three variables **blank** (template: `.env.aws.example`); absent still means local MinIO, so development is unchanged. Tests in `tests/test_config.py` cover blank in the environment, blank in a `.env` file, absent, non-blank, and that a blank config builds a client for `https://s3.us-east-2.amazonaws.com`. The credential-chain test in `tests/test_storage.py` also stopped assuming the machine has no AWS credentials, which became false once someone ran `aws configure`.
+
 ## What it should look like
 
 ```python

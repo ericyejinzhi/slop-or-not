@@ -22,6 +22,12 @@ variable "models_bucket_name" {
   default     = "slop-or-not-models-CHANGE-ME"
 }
 
+variable "force_destroy_buckets" {
+  description = "Let `terraform destroy` delete the S3 buckets even when they contain files. Without it, destroy fails on non-empty buckets and you must empty them by hand first. On by default because everything in them is a reproducible copy (thumbnails and model files copied from the local machine); set false if you ever keep the only copy of anything there."
+  type        = bool
+  default     = true
+}
+
 variable "db_name" {
   description = "Postgres database name"
   type        = string

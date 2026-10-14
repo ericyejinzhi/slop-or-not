@@ -88,6 +88,15 @@ resource "aws_iam_role_policy" "app_s3_access" {
   })
 }
 
+# Lets you open a shell on the instance from the AWS console (EC2 -> select the instance ->
+# Connect -> Session Manager) or `aws ssm start-session`, with no SSH key pair to create,
+# store or lose and no inbound port needed. Amazon Linux 2023 ships the SSM agent. Without
+# this (and without a key_name) there would be NO way to log into the instance at all.
+resource "aws_iam_role_policy_attachment" "app_ssm" {
+  role       = aws_iam_role.app.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 resource "aws_iam_instance_profile" "app" {
   name = "${var.project_name}-app-profile"
   role = aws_iam_role.app.name
@@ -99,6 +108,15 @@ resource "aws_instance" "app" {
   subnet_id              = data.aws_subnets.default.ids[0]
   vpc_security_group_ids = [aws_security_group.app.id]
   iam_instance_profile   = aws_iam_instance_profile.app.name
+
+  # The default root disk is 8 GB. The api image alone is about 3.4 GB (it carries torch) and
+  # Docker needs several times that while building it, so the first `docker compose build`
+  # would fill an 8 GB disk. 30 GB of gp3 is a small, fixed monthly cost.
+  root_block_device {
+    volume_size = 30
+    volume_type = "gp3"
+    encrypted   = true
+  }
 
   # A real deployment: install Docker + the Compose plugin, clone the repo, `cp
   # .env.example .env` and fill in the RDS endpoint/S3 bucket/AWS_REGION (leaving

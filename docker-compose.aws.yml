@@ -1,0 +1,25 @@
+# AWS deployment override. Use it ON TOP OF the base file, on the server:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.aws.yml up -d --build api web
+#
+# Why it exists: the base file is for local development, where the api talks to the
+# `postgres` and `minio` containers next to it. It hard-codes POSTGRES_HOST=postgres and
+# S3_ENDPOINT_URL=http://minio:9000 in the api's `environment:` (which takes precedence over
+# .env) and makes the api depend on both containers. On AWS those containers do not exist:
+# the database is RDS and the storage is S3, both configured in .env. Left alone, `up api
+# web` would start local copies of both and ignore every AWS setting.
+services:
+  api:
+    # Drop the local-development overrides so .env decides (RDS endpoint, blank S3_* for
+    # real S3 with the instance's IAM role - see .env.aws.example).
+    environment: !reset {}
+    # Nothing to wait for: RDS and S3 are managed services, not containers in this project.
+    depends_on: !reset {}
+    # Only the web container is public (port 80 in the security group); the api stays on the
+    # instance. Published on localhost only, for health checks and debugging over a session.
+    ports: !override
+      - "127.0.0.1:8000:8000"
+  web:
+    # The security group opens port 80; the base file publishes ${WEB_PORT:-8080}:80.
+    ports: !override
+      - "80:80"

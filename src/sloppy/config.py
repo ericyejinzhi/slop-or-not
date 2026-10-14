@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -62,6 +63,21 @@ class Settings(BaseSettings):
     # not a GET/HEAD/OPTIONS with a 403, so a public deployment cannot be used to ingest
     # channels (burning YouTube quota and CPU) or to write labels. Reading stays open.
     read_only: bool = False
+
+    @field_validator("s3_endpoint_url", "s3_access_key", "s3_secret_key", mode="before")
+    @classmethod
+    def _blank_means_unset(cls, value: object) -> object:
+        """A variable that is present but blank (`S3_ENDPOINT_URL=`) means "not set".
+
+        These three default to the local MinIO values, so for real AWS S3 they must be
+        turned OFF - and an environment variable can only be a string, never None. Without
+        this, a blank endpoint reaches boto3 as "" and fails with "Invalid endpoint", and a
+        merely absent variable silently falls back to the MinIO defaults (including its
+        login keys, which would then be sent to AWS). Blank -> None is how a server's .env
+        says "use real S3 and the instance's IAM role"."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @property
     def database_url(self) -> str:

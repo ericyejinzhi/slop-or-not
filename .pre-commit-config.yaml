@@ -11,5 +11,9 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        # --unsafe = only check that the file parses, without constructing objects.
+        # docker-compose.aws.yml uses Compose's own !reset / !override merge tags, which
+        # are valid Compose but not standard YAML tags, so strict loading rejects them.
+        args: [--unsafe]
       - id: check-added-large-files
       - id: detect-private-key
