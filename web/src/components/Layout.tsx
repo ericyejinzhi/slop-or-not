@@ -22,6 +22,9 @@ export function Layout() {
           <NavLink to="/" end className={navLinkClass}>
             Videos
           </NavLink>
+          <NavLink to="/channels" className={navLinkClass}>
+            Channels
+          </NavLink>
           {!readOnly && (
             <>
               <NavLink to="/label" className={navLinkClass}>

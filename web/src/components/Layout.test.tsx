@@ -28,6 +28,7 @@ describe('Layout navigation', () => {
     expect(await screen.findByRole('link', { name: 'Label' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Labeled' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Videos' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Channels' })).toBeInTheDocument()
   })
 
   it('hides the labeling links on a read-only deployment but keeps Videos', async () => {
@@ -40,6 +41,8 @@ describe('Layout navigation', () => {
     })
     expect(screen.queryByRole('link', { name: 'Labeled' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Videos' })).toBeInTheDocument()
+    // the ranked channel list only reads, so it stays available in a read-only deployment
+    expect(screen.getByRole('link', { name: 'Channels' })).toBeInTheDocument()
   })
 
   it('keeps the links if the config request fails (the API enforces read-only itself)', async () => {

@@ -84,6 +84,10 @@ describe('AppRoutes', () => {
           video_count: null,
           view_count: null,
           last_ingested_at: null,
+          channel_score: null,
+          channel_predicted_label: null,
+          ingested_video_count: 0,
+          scored_video_count: 0,
         }),
       ),
       http.get('/api/videos', () =>

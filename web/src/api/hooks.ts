@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { getChannel } from './channels'
+import { getChannel, listChannels, type ListChannelsParams } from './channels'
 import { getAppConfig } from './config'
 import { createIngest } from './ingest'
 import {
@@ -40,6 +40,13 @@ export function useVideoDetail(videoId: string | undefined, params: VideoDetailP
     queryKey: ['video', videoId, params],
     queryFn: () => getVideoDetail(videoId as string, params),
     enabled: videoId !== undefined,
+  })
+}
+
+export function useChannels(params: ListChannelsParams) {
+  return useQuery({
+    queryKey: ['channels', params],
+    queryFn: () => listChannels(params),
   })
 }
 

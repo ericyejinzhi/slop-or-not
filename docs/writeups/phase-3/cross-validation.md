@@ -93,6 +93,21 @@ Read the PR-AUC against the baseline, which rose from 0.31 to 0.46 purely becaus
 
 **The deployed model** is now fit on all labeled videos: `slop model train --all-data` (see `docs/writeups/TODO.md` item 15). It has no held-out data by construction, so its expected quality is the cross-validated figure above (all features: PR-AUC about 0.80, F1 about 0.73).
 
+## Update 2026-10-14: channel-level scoring
+
+Labels are per channel, so "is this channel slop?" is the question actually being labeled, yet the model scores videos. `slop model cv --channel-level` aggregates each channel's out-of-fold video scores (every video of a channel was scored by a model that never saw that channel) into one channel score and measures how well that separates slop channels from the rest. Corpus at the time: 1,072 videos in 105 labeled channels (50 slop, 55 not; every channel has a single label across its videos, 6 to 20 videos each, median 10). Logistic regression, all features, 5 folds x 3 repeats; channel-level PR-AUC baseline 0.476 (share of slop channels), video-level 0.461:
+
+| Level | ROC-AUC | PR-AUC | F1 at 0.5 |
+|---|---|---|---|
+| per video | 0.820 | 0.760 | 0.719 |
+| per channel: mean of its video scores | **0.861** | **0.826** | **0.789** |
+| per channel: median of its video scores | 0.862 | 0.820 | 0.786 |
+| per channel: share of videos scoring >= 0.5 | 0.848 | 0.817 | 0.778 |
+
+(Same effect with metadata features only: video 0.786 ROC-AUC, channel mean 0.823.) Averaging a channel's videos is worth about +0.04 ROC-AUC, +0.07 PR-AUC and +0.07 F1 over judging single videos, because the per-video errors partly cancel. Mean and median are equivalent within noise, so the app uses the mean (simpler to explain). Caveats: these are still estimates from 105 channels, and the per-channel numbers are not independent of the per-video ones (same models, same folds).
+
+**In the app (2026-10-14):** `GET /channels/{id}` returns `channel_score` (the mean of the channel's video scores under the active model), `channel_predicted_label` ("down" at or above 0.5, like a video), and the scored/ingested video counts; `GET /channels` lists channels ranked by that score (sort, order, predicted-label filter and pagination); the dashboard has a Channels page and shows the score on each channel page. A channel with no scored video has a null score. See `docs/writeups/phase-6/stage-8-channel-view-page.md`.
+
 ## What to look out for
 
 - **Folds are not independent samples.** Overlapping training sets and repeats that reuse the same 58 channels make the standard deviation a rough guide, not a confidence interval. Treat differences of a few hundredths as noise.

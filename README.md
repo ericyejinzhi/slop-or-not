@@ -77,7 +77,10 @@ against a majority-class baseline of 0.46 (the baseline is high because the clas
 nearly balanced; the lift over it is about +0.33). The 17 metadata features alone score 0.79,
 and XGBoost does no better than logistic regression. A feature-group ablation found the full
 feature set nominally best (+0.02 to +0.03 PR-AUC, from the CLIP thumbnail features; text
-features add nothing), but that difference is within the fold-to-fold noise. That is real
+features add nothing), but that difference is within the fold-to-fold noise. Because labels
+are per channel, the app also scores whole channels (the average of a channel's video
+scores): on unseen channels that separates slop from not-slop better than single videos do
+(ROC-AUC 0.86 vs 0.82; F1 0.79 vs 0.72 at the default threshold). That is real
 signal on unseen channels, but noisy and far from reliable. An earlier by-video split scored
 XGBoost at PR-AUC 0.99; that figure was inflated by channel leakage (labels are per channel,
 so the model could just recognize channels) and should be ignored. Details:

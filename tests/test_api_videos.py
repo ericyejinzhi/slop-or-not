@@ -373,7 +373,11 @@ def test_video_detail_returns_full_feature_breakdown_and_similar_videos():
 
         similar_ids = [v["video_id"] for v in body["similar_videos"]]
         assert similar_ids[0] == VIDEO_NEAR  # distance 0 - identical embedding
-        assert VIDEO_FAR in similar_ids
+        # Not asserting that VIDEO_FAR is in the list: it is only a top-k neighbor while the
+        # database holds few embedded videos. With the real corpus loaded (hundreds of CLIP
+        # embeddings), real videos outrank it. What is data-independent is the ordering.
+        distances = [v["distance"] for v in body["similar_videos"]]
+        assert distances == sorted(distances)  # nearest first
         near_entry = body["similar_videos"][0]
         assert abs(near_entry["distance"] - 0.0) < 1e-6
     finally:

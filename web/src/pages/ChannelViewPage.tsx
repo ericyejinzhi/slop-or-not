@@ -1,5 +1,6 @@
 import { useParams } from 'react-router-dom'
 import { useChannel, useVideos } from '../api/hooks'
+import { ScoreBadge } from '../components/ScoreBadge'
 import { VideoGrid } from '../components/VideoGrid'
 import { VideoListControls } from '../components/VideoListControls'
 import { PAGE_SIZE, useVideoListState } from '../hooks/useVideoListState'
@@ -42,6 +43,17 @@ export function ChannelViewPage() {
       <div className="space-y-1">
         <h1 className="text-xl font-semibold text-slate-900">{channel.title}</h1>
         {channel.handle && <p className="text-sm text-slate-500">{channel.handle}</p>}
+        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+          <span>Channel score</span>
+          <ScoreBadge
+            score={channel.channel_score}
+            predictedLabel={channel.channel_predicted_label}
+          />
+          <span className="text-xs text-slate-400">
+            average of {channel.scored_video_count} scored of {channel.ingested_video_count}{' '}
+            ingested videos
+          </span>
+        </div>
         {channel.description && (
           <p className="whitespace-pre-line text-sm text-slate-700">{channel.description}</p>
         )}

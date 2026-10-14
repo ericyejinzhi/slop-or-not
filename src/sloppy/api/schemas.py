@@ -99,6 +99,31 @@ class ChannelDetail(BaseModel):
     video_count: int | None
     view_count: int | None
     last_ingested_at: datetime | None
+    # Channel-level score: the MEAN of the channel's video scores under the active model.
+    # Labels are per channel, and averaging beat scoring videos one at a time in
+    # cross-validation (ROC-AUC 0.86 vs 0.82). None when none of its videos is scored.
+    channel_score: float | None = None
+    channel_predicted_label: Literal["up", "down"] | None = None
+    ingested_video_count: int = 0
+    scored_video_count: int = 0
+
+
+class ChannelListItem(BaseModel):
+    id: str
+    handle: str | None
+    title: str
+    subscriber_count: int | None
+    ingested_video_count: int
+    scored_video_count: int
+    channel_score: float | None
+    channel_predicted_label: Literal["up", "down"] | None
+
+
+class ChannelListResponse(BaseModel):
+    items: list[ChannelListItem]
+    total: int
+    limit: int
+    offset: int
 
 
 class LabelPoolItem(BaseModel):

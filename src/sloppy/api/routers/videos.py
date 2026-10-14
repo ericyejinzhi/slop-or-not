@@ -34,7 +34,7 @@ _SORT_COLUMNS = {
 }
 
 
-def _resolve_model(
+def resolve_model(
     settings: Settings, model_name: str | None, model_version: str | None
 ) -> tuple[str, str] | tuple[None, None]:
     """If neither an override nor Settings.active_model_name/version is set, callers
@@ -60,7 +60,7 @@ def list_videos(
     session: Session = Depends(get_db),  # noqa: B008
     s3_client=Depends(get_s3),  # noqa: B008
 ) -> VideoListResponse:
-    resolved_name, resolved_version = _resolve_model(get_settings(), model_name, model_version)
+    resolved_name, resolved_version = resolve_model(get_settings(), model_name, model_version)
     # An unresolved model uses "" for both, which never matches a real (non-empty)
     # model_name/version - the outerjoin then simply finds nothing, giving null scores
     # uniformly instead of branching the query on whether a model is active.
@@ -135,7 +135,7 @@ def get_video_detail(
         raise HTTPException(status_code=404, detail=f"Video {video_id!r} not found")
 
     channel = session.get(Channel, video.channel_id)
-    resolved_name, resolved_version = _resolve_model(get_settings(), model_name, model_version)
+    resolved_name, resolved_version = resolve_model(get_settings(), model_name, model_version)
     score_row = (
         session.get(VideoScore, (video_id, resolved_name, resolved_version))
         if resolved_name is not None

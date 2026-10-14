@@ -49,7 +49,13 @@ from sloppy.label.split import (
 )
 from sloppy.models.ablation import format_ablation_table
 from sloppy.models.artifact_store import download_model, upload_model
-from sloppy.models.cv import GROUP_BY_CHOICES, ablate, cross_validate, threshold_sweep
+from sloppy.models.cv import (
+    GROUP_BY_CHOICES,
+    ablate,
+    channel_level_report,
+    cross_validate,
+    threshold_sweep,
+)
 from sloppy.models.evaluate import BinaryMetrics, evaluate
 from sloppy.models.report import top_errors
 from sloppy.models.scores import upsert_video_score
@@ -994,6 +1000,13 @@ def cv_command(
         help="Compare all feature groups (metadata / metadata_text / all) over identical "
         "folds instead of running one group; ignores --feature-group.",
     ),
+    channel_level: bool = typer.Option(
+        False,
+        "--channel-level",
+        help="Also report accuracy at the CHANNEL level: each channel's out-of-fold video "
+        "scores aggregated into one score (mean / median / share of videos flagged), next "
+        "to the per-video numbers. Labels are per channel, so this is the question labeled.",
+    ),
     threshold_sweep_flag: bool = typer.Option(
         False,
         "--threshold-sweep",
@@ -1091,6 +1104,16 @@ def cv_command(
                 f"[{row.min:.3f}, {row.max:.3f}]"
             )
         _print_metrics("pooled out-of-fold", result.pooled())
+
+        if channel_level:
+            typer.echo("  channel level vs video level (out-of-fold, averaged over repeats):")
+            report = channel_level_report(result.oof)
+            typer.echo(
+                "    "
+                + report.to_string(index=False, float_format=lambda x: f"{x:.3f}").replace(
+                    "\n", "\n    "
+                )
+            )
 
         if threshold_sweep_flag:
             typer.echo("  threshold sweep (pooled out-of-fold, averaged over repeats):")

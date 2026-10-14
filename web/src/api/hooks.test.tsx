@@ -107,6 +107,10 @@ describe('useChannel', () => {
       video_count: 10,
       view_count: 50000,
       last_ingested_at: null,
+      channel_score: 0.4,
+      channel_predicted_label: 'up',
+      ingested_video_count: 10,
+      scored_video_count: 10,
     }
     server.use(http.get('/api/channels/UC_x', () => HttpResponse.json(channel)))
 

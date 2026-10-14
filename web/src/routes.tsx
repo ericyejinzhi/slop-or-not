@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router-dom'
 import { Layout } from './components/Layout'
+import { ChannelsPage } from './pages/ChannelsPage'
 import { ChannelViewPage } from './pages/ChannelViewPage'
 import { LabeledVideosPage } from './pages/LabeledVideosPage'
 import { LabelingPage } from './pages/LabelingPage'
@@ -15,6 +16,7 @@ export function AppRoutes() {
       <Route element={<Layout />}>
         <Route index element={<VideoGridPage />} />
         <Route path="videos/:videoId" element={<VideoDetailPage />} />
+        <Route path="channels" element={<ChannelsPage />} />
         <Route path="channels/:channelId" element={<ChannelViewPage />} />
         <Route path="label" element={<LabelingPage />} />
         <Route path="labeled" element={<LabeledVideosPage />} />

@@ -260,3 +260,46 @@ def threshold_sweep(
             }
         )
     return pd.DataFrame(rows)
+
+
+def channel_level_report(oof: pd.DataFrame, threshold: float = 0.5) -> pd.DataFrame:
+    """How well do a channel's videos' out-of-fold scores, aggregated into ONE score per
+    channel, separate slop channels from the rest - next to the per-video numbers.
+
+    Labels are per channel (every video in a channel shares one label), so "is this channel
+    slop?" is the question being labeled, and averaging many noisy per-video scores into one
+    should beat judging a single video. Because the folds are grouped by channel, every
+    video of a channel was scored by a model that never saw that channel. Computed per
+    repeat, then averaged. Rows: the per-video baseline, then the channel's mean score, its
+    median, and the share of its videos scored at or above `threshold`. `oof` needs
+    channel_id/y/score/repeat columns (CrossValidationResult.oof)."""
+    from sklearn.metrics import average_precision_score, f1_score, roc_auc_score
+
+    collected: dict[str, list[tuple[float, float, float]]] = {}
+
+    def add(name: str, y: pd.Series, score: pd.Series) -> None:
+        collected.setdefault(name, []).append(
+            (
+                roc_auc_score(y, score),
+                average_precision_score(y, score),
+                f1_score(y, score >= threshold, zero_division=0),
+            )
+        )
+
+    for _repeat, part in oof.groupby("repeat"):
+        add("video", part["y"], part["score"])
+        by_channel = part.groupby("channel_id")
+        y = by_channel["y"].first()
+        add("channel mean", y, by_channel["score"].mean())
+        add("channel median", y, by_channel["score"].median())
+        add(
+            "channel share >= threshold",
+            y,
+            by_channel["score"].apply(lambda s: (s >= threshold).mean()),
+        )
+
+    rows = []
+    for name, values in collected.items():
+        roc_auc, pr_auc, f1 = np.array(values).mean(axis=0)
+        rows.append({"level": name, "roc_auc": roc_auc, "pr_auc": pr_auc, "f1": f1})
+    return pd.DataFrame(rows)

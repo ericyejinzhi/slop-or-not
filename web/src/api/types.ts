@@ -82,6 +82,29 @@ export interface ChannelDetail {
   video_count: number | null
   view_count: number | null
   last_ingested_at: string | null
+  // The mean of the channel's video scores under the active model; null if none is scored.
+  channel_score: number | null
+  channel_predicted_label: 'up' | 'down' | null
+  ingested_video_count: number
+  scored_video_count: number
+}
+
+export interface ChannelListItem {
+  id: string
+  handle: string | null
+  title: string
+  subscriber_count: number | null
+  ingested_video_count: number
+  scored_video_count: number
+  channel_score: number | null
+  channel_predicted_label: 'up' | 'down' | null
+}
+
+export interface ChannelListResponse {
+  items: ChannelListItem[]
+  total: number
+  limit: number
+  offset: number
 }
 
 export interface LabelPoolItem {

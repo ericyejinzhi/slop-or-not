@@ -30,6 +30,10 @@ function makeChannel(overrides: Partial<ChannelDetail> = {}): ChannelDetail {
     video_count: 42,
     view_count: 100000,
     last_ingested_at: null,
+    channel_score: null,
+    channel_predicted_label: null,
+    ingested_video_count: 10,
+    scored_video_count: 0,
     ...overrides,
   }
 }
@@ -50,6 +54,40 @@ function makeVideo(overrides: Partial<VideoListItem> = {}): VideoListItem {
 }
 
 describe('ChannelViewPage', () => {
+  it('shows the channel score as the average of its scored videos', async () => {
+    server.use(
+      http.get('/api/channels/UC_x', () =>
+        HttpResponse.json(
+          makeChannel({
+            channel_score: 0.73,
+            channel_predicted_label: 'down',
+            ingested_video_count: 10,
+            scored_video_count: 8,
+          }),
+        ),
+      ),
+      http.get('/api/videos', () =>
+        HttpResponse.json({ items: [], total: 0, limit: 20, offset: 0 }),
+      ),
+    )
+    renderAtChannel('UC_x')
+
+    expect(await screen.findByText('down (0.73)')).toBeInTheDocument()
+    expect(screen.getByText(/average of 8 scored of 10 ingested videos/)).toBeInTheDocument()
+  })
+
+  it('says the channel is unscored when none of its videos has a score', async () => {
+    server.use(
+      http.get('/api/channels/UC_x', () => HttpResponse.json(makeChannel())),
+      http.get('/api/videos', () =>
+        HttpResponse.json({ items: [], total: 0, limit: 20, offset: 0 }),
+      ),
+    )
+    renderAtChannel('UC_x')
+
+    expect(await screen.findByText('Unscored')).toBeInTheDocument()
+  })
+
   it('renders channel stats and its video grid', async () => {
     server.use(
       http.get('/api/channels/UC_x', () => HttpResponse.json(makeChannel())),

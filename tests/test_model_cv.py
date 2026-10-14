@@ -2,7 +2,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from sloppy.models.cv import ablate, cross_validate, make_folds, threshold_sweep
+from sloppy.models.cv import (
+    ablate,
+    channel_level_report,
+    cross_validate,
+    make_folds,
+    threshold_sweep,
+)
 
 NUMERIC = ["signal", "noise"]
 
@@ -174,3 +180,49 @@ def test_threshold_sweep_handles_a_threshold_that_flags_nothing():
     assert np.isnan(sweep.loc[0, "precision"])
     assert sweep.loc[0, "f1"] == 0.0
     assert sweep.loc[0, "flagged"] == 0.0
+
+
+def _channel_oof(rows, repeat=0):
+    return pd.DataFrame(
+        [
+            {"channel_id": c, "y": y, "score": s, "repeat": repeat}
+            for c, y, scores in rows
+            for s in scores
+        ]
+    )
+
+
+def test_channel_level_report_shows_averaging_beating_single_videos():
+    # Noisy per-video scores, but each channel's videos average out on the right side:
+    # the slop channel A: .9 .2 .8 (mean .63); the fine channel B: .1 .8 .2 (mean .37).
+    oof = _channel_oof([("A", 1, [0.9, 0.2, 0.8]), ("B", 0, [0.1, 0.8, 0.2])])
+
+    report = channel_level_report(oof).set_index("level")
+
+    # video level: 7 of 9 (positive, negative) pairs ranked correctly (one tie counts half)
+    assert report.loc["video", "roc_auc"] == pytest.approx(7 / 9)
+    # channel level: A beats B however it is aggregated
+    for level in ("channel mean", "channel median", "channel share >= threshold"):
+        assert report.loc[level, "roc_auc"] == 1.0
+        assert report.loc[level, "f1"] == 1.0
+    assert report.loc["channel mean", "roc_auc"] > report.loc["video", "roc_auc"]
+
+
+def test_channel_level_report_uses_the_mean_not_the_median():
+    # Mean .5 (flagged at the 0.5 threshold) but median .4 (not flagged): only the mean
+    # row's F1 reflects the channel as slop.
+    oof = _channel_oof([("A", 1, [0.2, 0.4, 0.9]), ("B", 0, [0.05, 0.05, 0.05])])
+
+    report = channel_level_report(oof).set_index("level")
+
+    assert report.loc["channel mean", "f1"] == 1.0  # A (mean .5) flagged
+    assert report.loc["channel median", "f1"] == 0.0  # A (median .4) missed
+
+
+def test_channel_level_report_averages_over_repeats():
+    good = _channel_oof([("A", 1, [0.9]), ("B", 0, [0.1])], repeat=0)
+    bad = _channel_oof([("A", 1, [0.1]), ("B", 0, [0.9])], repeat=1)
+
+    report = channel_level_report(pd.concat([good, bad])).set_index("level")
+
+    assert report.loc["channel mean", "roc_auc"] == pytest.approx(0.5)  # (1.0 + 0.0) / 2

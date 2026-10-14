@@ -12,6 +12,13 @@ Before writing the page itself, Stage 6's video grid was refactored into 3 reusa
 - `web/src/pages/VideoGridPage.tsx` - rewritten to just compose the three pieces above (now under 30 lines, down from the original single-file implementation).
 - `web/src/pages/ChannelViewPage.tsx` - a channel header (title, handle, description, subscriber/video/view counts via `formatCount`, and a "Last ingested {date}" / "Never fully ingested" line depending on whether `last_ingested_at` is `null`) followed by the same `VideoListControls` + `VideoGrid` combination, scoped to this channel.
 
+## Update 2026-10-14 - channel score, and a Channels page
+
+Labels are per channel, so the app now answers "is this channel slop?" directly:
+- The channel page shows a **channel score badge**: the mean of the channel's video scores under the active model (the same `down (0.73)` style as a video), with "average of N scored of M ingested videos" beside it, or "Unscored" if none of its videos has a score. `GET /channels/{id}` supplies `channel_score`, `channel_predicted_label`, `scored_video_count` and `ingested_video_count`.
+- A new **Channels** page (`/channels`, nav link "Channels", backed by the new `GET /channels`) lists channels ranked by that score with sort (score, name, subscribers, videos), order, and a predicted slop / not-slop filter, paginated 20 at a time; unscored channels always sort last. Any control change returns to page 1.
+- Why the mean: in cross-validation a channel's averaged score separates slop channels better than single-video scores (ROC-AUC 0.86 vs 0.82); see `docs/writeups/phase-3/cross-validation.md`.
+
 ## What it should look like
 
 Verified with 4 new tests in `web/src/pages/ChannelViewPage.test.tsx`: channel stats and its video grid render together from two independent MSW-mocked endpoints; a channel with `last_ingested_at` set shows "Last ingested ..." instead of "Never fully ingested"; the video-list request genuinely includes `channel_id=UC_x` in its query string (confirming the scoping actually reaches the network call, not just the component's props); a failed channel fetch shows "Failed to load this channel." All of Stage 6's original `VideoGridPage.test.tsx` tests still pass unmodified against the refactored page, confirming the extraction didn't change behavior.
