@@ -53,9 +53,9 @@ variable "db_instance_class" {
 }
 
 variable "db_engine_version" {
-  description = "Postgres version - must be 13.10+/14.7+/15.2+/16.1+ for pgvector support (AWS RDS docs)"
+  description = "Postgres version. Major version only: RDS picks its current default 16.x minor and auto-upgrades minors, so this never names a retired version (16.4 was rejected on 2026-10-14). Any 16.x supports pgvector."
   type        = string
-  default     = "16.4"
+  default     = "16"
 }
 
 variable "app_instance_type" {
