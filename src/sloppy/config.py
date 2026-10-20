@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     active_model_name: str = ""
     active_model_version: str = ""
 
+    # Video-only model: trained on the `video_only` feature group (no channel-context
+    # features), so it can score a single video with no channel history. When set,
+    # ingestion also scores every video with it, next to the active model's score. Blank
+    # means unset: nothing extra is scored and nothing extra is computed.
+    video_only_model_name: str = ""
+    video_only_model_version: str = ""
+
     # Model artifacts in object storage (Phase 8 prep). Trained models live in
     # `models_artifacts/` locally, which is not in git; a fresh server needs them from
     # somewhere. `slop model publish` uploads a model to s3_bucket_models, and with

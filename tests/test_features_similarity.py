@@ -197,7 +197,14 @@ def test_nearest_videos_by_thumbnail_orders_nearest_first_and_respects_k():
             )
 
         with session_scope() as session:
-            neighbors = nearest_videos_by_thumbnail(session, VIDEO_IDS[0], k=10)
+            # Ask for every neighbor and keep only this test's videos: a developer database
+            # holds real thumbnails too, which would otherwise crowd the fixtures out of a
+            # small k.
+            neighbors = [
+                n
+                for n in nearest_videos_by_thumbnail(session, VIDEO_IDS[0], k=100_000)
+                if n[0] in VIDEO_IDS
+            ]
             assert [video_id for video_id, _ in neighbors] == [VIDEO_IDS[1], VIDEO_IDS[2]]
             assert abs(neighbors[0][1] - 0.0) < 1e-6
             assert abs(neighbors[1][1] - 1.0) < 1e-6

@@ -193,3 +193,15 @@ def test_a_metadata_trained_model_scores_videos_that_have_no_nlp_or_vision_colum
     scores = score_dataframe(trained, metadata_only)
 
     assert roc_auc_score(metadata_only["y"], scores) > 0.9
+
+
+def test_video_only_group_is_the_full_set_minus_exactly_the_channel_context_features():
+    from sloppy.models.train import CHANNEL_CONTEXT_FEATURES, FEATURE_GROUPS
+
+    all_numeric, all_categorical = FEATURE_GROUPS["all"]
+    numeric, categorical = FEATURE_GROUPS["video_only"]
+
+    removed = (set(all_numeric) | set(all_categorical)) - (set(numeric) | set(categorical))
+    assert removed == set(CHANNEL_CONTEXT_FEATURES)
+    assert len(numeric) + len(categorical) == 32
+    assert not set(CHANNEL_CONTEXT_FEATURES) & (set(numeric) | set(categorical))

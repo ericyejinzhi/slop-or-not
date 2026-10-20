@@ -108,6 +108,24 @@ Labels are per channel, so "is this channel slop?" is the question actually bein
 
 **In the app (2026-10-14):** `GET /channels/{id}` returns `channel_score` (the mean of the channel's video scores under the active model), `channel_predicted_label` ("down" at or above 0.5, like a video), and the scored/ingested video counts; `GET /channels` lists channels ranked by that score (sort, order, predicted-label filter and pagination); the dashboard has a Channels page and shows the score on each channel page. A channel with no scored video has a null score. See `docs/writeups/phase-6/stage-8-channel-view-page.md`.
 
+## Update 2026-10-20: a video-only feature group
+
+**Why.** Predicting from a pasted link has to work for a single video with no channel history. Six of the 38 features compare a video with the rest of its channel, so a link from an unknown channel cannot supply them: `duration_deviation_channel`, `channel_upload_cadence_days`, `channel_sentiment_mean`, `channel_thumbnail_self_similarity`, `channel_title_self_similarity` and `duration_deviation_x_cadence` (it multiplies in the cadence). The new `video_only` feature group is `all` without those six (32 features; `CHANNEL_CONTEXT_FEATURES` in `models/train.py`).
+
+**Result** (105 channels, 1,072 videos, channel-grouped 5-fold x 3 repeats, identical folds; reproduce with `slop model cv --ablation --repeats 3` and `slop model cv --feature-group <all|video_only> --channel-level --repeats 3`):
+
+| Model and group | Video PR-AUC | Video F1 | Channel-mean ROC-AUC | Channel-mean PR-AUC | Channel-mean F1 |
+|---|---|---|---|---|---|
+| logistic regression, all (38) | 0.794 | 0.719 | 0.861 | 0.826 | 0.789 |
+| logistic regression, video_only (32) | 0.740 | 0.693 | 0.837 | 0.797 | 0.777 |
+| XGBoost, all (38) | 0.812 | 0.716 | 0.853 | 0.857 | 0.737 |
+| XGBoost, video_only (32) | 0.814 | 0.722 | 0.892 | 0.902 | 0.802 |
+
+- **Logistic regression needs the channel features.** Without them it loses 0.054 PR-AUC per video and falls below the 17-feature metadata-only group (0.765).
+- **XGBoost does not.** Without them it is as good per video and better per channel. A plausible reason, not tested: the six features are constant within a channel, so a tree model can use them to memorize which channel a training video came from, which does not transfer to channels it has never seen.
+- **Read the size of the gaps carefully.** Fold-to-fold standard deviation is 0.08 to 0.12 and the paired differences are about as large, with only 105 channels. "No loss" means no detectable loss. The comparison also reuses the same data across several configurations, so the best-looking number is somewhat optimistic.
+- **Consequence.** The video-only XGBoost is the model to use when a video arrives without channel history, and it is competitive as the main model too. Setting `VIDEO_ONLY_MODEL_NAME` and `VIDEO_ONLY_MODEL_VERSION` makes every ingest also score with it.
+
 ## What to look out for
 
 - **Folds are not independent samples.** Overlapping training sets and repeats that reuse the same 58 channels make the standard deviation a rough guide, not a confidence interval. Treat differences of a few hundredths as noise.

@@ -75,15 +75,35 @@ VISION_NUMERIC_FEATURES = [
 ]
 VISION_CATEGORICAL_FEATURES: list[str] = []
 
+_ALL_NUMERIC = METADATA_NUMERIC_FEATURES + TEXT_NUMERIC_FEATURES + VISION_NUMERIC_FEATURES
+_ALL_CATEGORICAL = (
+    METADATA_CATEGORICAL_FEATURES + TEXT_CATEGORICAL_FEATURES + VISION_CATEGORICAL_FEATURES
+)
+
+# Features that compare a video with the REST of its channel (its other uploads, comments
+# or thumbnails). A video submitted on its own - a link pasted by a visitor, with no
+# channel history on hand - cannot supply them. The "video_only" group is "all" without
+# these, so it can score any single video. `duration_deviation_x_cadence` is here because
+# it multiplies in the channel's upload cadence.
+CHANNEL_CONTEXT_FEATURES = [
+    "duration_deviation_channel",
+    "channel_upload_cadence_days",
+    "channel_sentiment_mean",
+    "channel_thumbnail_self_similarity",
+    "channel_title_self_similarity",
+    "duration_deviation_x_cadence",
+]
+
 FEATURE_GROUPS: dict[str, tuple[list[str], list[str]]] = {
     "metadata": (METADATA_NUMERIC_FEATURES, METADATA_CATEGORICAL_FEATURES),
     "metadata_text": (
         METADATA_NUMERIC_FEATURES + TEXT_NUMERIC_FEATURES,
         METADATA_CATEGORICAL_FEATURES + TEXT_CATEGORICAL_FEATURES,
     ),
-    "all": (
-        METADATA_NUMERIC_FEATURES + TEXT_NUMERIC_FEATURES + VISION_NUMERIC_FEATURES,
-        METADATA_CATEGORICAL_FEATURES + TEXT_CATEGORICAL_FEATURES + VISION_CATEGORICAL_FEATURES,
+    "all": (_ALL_NUMERIC, _ALL_CATEGORICAL),
+    "video_only": (
+        [f for f in _ALL_NUMERIC if f not in CHANNEL_CONTEXT_FEATURES],
+        [f for f in _ALL_CATEGORICAL if f not in CHANNEL_CONTEXT_FEATURES],
     ),
 }
 

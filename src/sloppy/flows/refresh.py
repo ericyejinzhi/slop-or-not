@@ -13,10 +13,11 @@ from prefect import flow, task
 from sloppy.config import get_settings
 from sloppy.features.pipeline import compute_nlp_features, compute_vision_features
 from sloppy.refresh import (
-    active_model_feature_needs,
     channel_video_ids,
     ingest_channel_sampled,
+    pipeline_feature_needs,
     score_with_active_model,
+    score_with_video_only_model,
 )
 
 DEFAULT_SEED_CHANNELS_CSV = Path("data/seed_channels.csv")
@@ -65,25 +66,40 @@ def score_channel_task(channel_id: str) -> list[str]:
     return scored
 
 
+@task(retries=2, retry_delay_seconds=30, log_prints=True)
+def score_video_only_task(channel_id: str) -> list[str]:
+    """Also score the channel's videos with the video-only model, when one is configured."""
+    settings = get_settings()
+    scored, skipped = score_with_video_only_model(settings, channel_video_ids(channel_id))
+    if skipped is not None:
+        print(f"Skipping video-only scoring for {channel_id}: {skipped}")
+        return []
+
+    print(f"Video-only scored {len(scored)} video(s) in {channel_id}")
+    return scored
+
+
 @flow(name="refresh-channel", log_prints=True)
 def refresh_channel_flow(id_or_handle: str) -> dict:
     """Ingest -> compute-nlp -> compute-vision -> score for one channel, strictly in
     sequence - each step depends on the previous one's data existing (there's nothing to
     compute NLP features for until videos are ingested), so this is intentionally not
-    parallelized. The NLP/vision steps are skipped when the active model doesn't use those
-    features (a model trained with `--feature-group metadata`), which also avoids loading
-    the NLP/CLIP models at all.
+    parallelized. The NLP/vision steps are skipped when neither the active model nor the
+    video-only model uses those features (a model trained with `--feature-group metadata`),
+    which also avoids loading the NLP/CLIP models at all.
     """
-    needs_text, needs_vision = active_model_feature_needs(get_settings())
+    needs_text, needs_vision = pipeline_feature_needs(get_settings())
     channel_id = ingest_channel_task(id_or_handle)
     nlp_processed = compute_nlp_task(channel_id) if needs_text else []
     vision_processed = compute_vision_task(channel_id) if needs_vision else []
     scored = score_channel_task(channel_id)
+    video_only_scored = score_video_only_task(channel_id)
     return {
         "channel_id": channel_id,
         "nlp_processed": len(nlp_processed),
         "vision_processed": len(vision_processed),
         "scored": len(scored),
+        "video_only_scored": len(video_only_scored),
     }
 
 

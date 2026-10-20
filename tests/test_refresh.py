@@ -316,3 +316,89 @@ def test_refresh_video_stops_early_and_reports_when_ingest_failed(monkeypatch):
 
     assert result.videos_ingested == 0
     assert result.errors == ["abc: boom"]
+
+
+VIDEO_ONLY = Settings(
+    _env_file=None,
+    active_model_name="logistic_regression",
+    active_model_version="v1",
+    video_only_model_name="logistic_regression",
+    video_only_model_version="vo1",
+)
+
+
+def test_score_with_video_only_model_skips_when_none_is_configured(monkeypatch):
+    monkeypatch.setattr(refresh, "score_videos", lambda **kw: pytest.fail("must not score"))
+
+    scored, reason = refresh.score_with_video_only_model(ACTIVE, ["v1"])
+
+    assert scored == []
+    assert "no video-only model" in reason
+
+
+def test_score_with_video_only_model_scores_under_its_own_version(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(refresh, "ensure_local_model", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        refresh, "score_videos", lambda **kw: captured.update(kw) or kw["video_ids"]
+    )
+
+    scored, reason = refresh.score_with_video_only_model(VIDEO_ONLY, ["v1"])
+
+    assert (scored, reason) == (["v1"], None)
+    assert captured["model_version"] == "vo1"
+
+
+def test_a_video_only_scoring_failure_is_reported_not_raised(monkeypatch):
+    monkeypatch.setattr(refresh, "ensure_local_model", lambda *a, **kw: None)
+
+    def boom(**kw):
+        raise RuntimeError("artifact is corrupt")
+
+    monkeypatch.setattr(refresh, "score_videos", boom)
+
+    scored, reason = refresh.score_with_video_only_model(VIDEO_ONLY, ["v1"])
+
+    assert scored == []
+    assert "video-only scoring failed" in reason
+    assert "artifact is corrupt" in reason
+
+
+def test_pipeline_feature_needs_adds_what_the_video_only_model_needs(monkeypatch):
+    monkeypatch.setattr(refresh, "active_model_feature_needs", lambda settings: (False, False))
+    monkeypatch.setattr(refresh, "_model_feature_needs", lambda settings, n, v: (True, False))
+
+    assert refresh.pipeline_feature_needs(VIDEO_ONLY) == (True, False)
+    # nothing configured for video-only: exactly the active model's needs
+    assert refresh.pipeline_feature_needs(ACTIVE) == (False, False)
+
+
+def test_refresh_channel_scores_with_both_models_when_a_video_only_model_is_set(monkeypatch):
+    calls = []
+    _patch_pipeline(monkeypatch, calls, IngestSummary(channel_id="UC_x", videos_upserted=2))
+    monkeypatch.setattr(refresh, "pipeline_feature_needs", lambda settings: (True, True))
+    monkeypatch.setattr(refresh, "ensure_local_model", lambda *a, **kw: None)
+
+    result = refresh.refresh_channel(VIDEO_ONLY, "@chan")
+
+    assert [c[0] for c in calls].count("score") == 2
+    assert (result.scored, result.video_only_scored) == (2, 2)
+    assert result.errors == []
+
+
+def test_a_failing_video_only_model_does_not_stop_the_active_score(monkeypatch):
+    calls = []
+    _patch_pipeline(monkeypatch, calls, IngestSummary(channel_id="UC_x", videos_upserted=2))
+    monkeypatch.setattr(refresh, "pipeline_feature_needs", lambda settings: (True, True))
+    monkeypatch.setattr(refresh, "ensure_local_model", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        refresh,
+        "score_with_video_only_model",
+        lambda settings, ids: ([], "video-only scoring failed: boom"),
+    )
+
+    result = refresh.refresh_channel(VIDEO_ONLY, "@chan")
+
+    assert result.scored == 2
+    assert result.video_only_scored == 0
+    assert result.errors == ["video-only scoring failed: boom"]

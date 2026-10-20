@@ -132,7 +132,7 @@ def test_score_channel_task_scores_when_active_model_is_set(monkeypatch):
 
 def _patch_flow_basics(monkeypatch, call_order, needs):
     monkeypatch.setattr(refresh, "get_settings", lambda: Settings(_env_file=None))
-    monkeypatch.setattr(refresh, "active_model_feature_needs", lambda settings: needs)
+    monkeypatch.setattr(refresh, "pipeline_feature_needs", lambda settings: needs)
     monkeypatch.setattr(
         refresh,
         "ingest_channel_task",
@@ -153,6 +153,7 @@ def _patch_flow_basics(monkeypatch, call_order, needs):
         "score_channel_task",
         lambda channel_id: call_order.append(("score", channel_id)) or ["v1"],
     )
+    monkeypatch.setattr(refresh, "score_video_only_task", lambda channel_id: [])
 
 
 def test_refresh_channel_flow_skips_feature_steps_a_metadata_only_model_does_not_use(
@@ -164,7 +165,13 @@ def test_refresh_channel_flow_skips_feature_steps_a_metadata_only_model_does_not
     result = refresh.refresh_channel_flow.fn("@somechannel")
 
     assert call_order == [("ingest", "@somechannel"), ("score", "UC_x")]
-    assert result == {"channel_id": "UC_x", "nlp_processed": 0, "vision_processed": 0, "scored": 1}
+    assert result == {
+        "channel_id": "UC_x",
+        "nlp_processed": 0,
+        "vision_processed": 0,
+        "scored": 1,
+        "video_only_scored": 0,
+    }
 
 
 def test_refresh_channel_flow_runs_only_the_vision_step_when_only_vision_is_needed(monkeypatch):
@@ -179,7 +186,7 @@ def test_refresh_channel_flow_runs_only_the_vision_step_when_only_vision_is_need
 def test_refresh_channel_flow_calls_all_four_steps_in_order(monkeypatch):
     call_order = []
     monkeypatch.setattr(refresh, "get_settings", lambda: Settings(_env_file=None))
-    monkeypatch.setattr(refresh, "active_model_feature_needs", lambda settings: (True, True))
+    monkeypatch.setattr(refresh, "pipeline_feature_needs", lambda settings: (True, True))
 
     monkeypatch.setattr(
         refresh,
@@ -201,6 +208,7 @@ def test_refresh_channel_flow_calls_all_four_steps_in_order(monkeypatch):
         "score_channel_task",
         lambda channel_id: call_order.append(("score", channel_id)) or ["v1"],
     )
+    monkeypatch.setattr(refresh, "score_video_only_task", lambda channel_id: [])
 
     result = refresh.refresh_channel_flow.fn("@somechannel")
 
@@ -210,7 +218,13 @@ def test_refresh_channel_flow_calls_all_four_steps_in_order(monkeypatch):
         ("vision", "UC_x"),
         ("score", "UC_x"),
     ]
-    assert result == {"channel_id": "UC_x", "nlp_processed": 1, "vision_processed": 1, "scored": 1}
+    assert result == {
+        "channel_id": "UC_x",
+        "nlp_processed": 1,
+        "vision_processed": 1,
+        "scored": 1,
+        "video_only_scored": 0,
+    }
 
 
 def test_refresh_all_tracked_channels_flow_reads_csv_and_calls_per_channel(tmp_path, monkeypatch):
