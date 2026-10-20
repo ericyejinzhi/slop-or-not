@@ -101,7 +101,9 @@ Then from your laptop: `aws s3 rm s3://<models bucket>/snapshots/snapshot.dump`.
 cd infra/terraform
 terraform destroy       # buckets are emptied automatically (force_destroy_buckets = true)
 ```
-This deletes the database **without a final snapshot** (everything in it is a copy of your local data) and the server. Check the console afterward for leftovers, and the Billing page the next day. The public IP changes if the instance is ever stopped and started (there is no Elastic IP).
+This deletes the database **without a final snapshot** (everything in it is a copy of your local data) and the server.
+
+Shortcut for walking away: from the main checkout, `bash scripts/stop-dev.sh --destroy-aws` stops the local services, asks you to type `destroy`, runs the same `terraform destroy` (it does not need your DB password), and prints a before/after list of anything still billing. Plain `bash scripts/stop-dev.sh` only stops local services, but it also prints that read-only list so you can see what is still costing money. Check the console afterward for leftovers, and the Billing page the next day. The public IP changes if the instance is ever stopped and started (there is no Elastic IP).
 
 ## If something goes wrong
 | Symptom | Likely cause |

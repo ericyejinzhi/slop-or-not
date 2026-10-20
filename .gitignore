@@ -40,3 +40,7 @@ Thumbs.db
 .vscode/
 
 notes.txt
+
+# Terraform state from a command accidentally run in the repo root (the real one is infra/terraform/)
+/terraform.tfstate
+/terraform.tfstate.backup
