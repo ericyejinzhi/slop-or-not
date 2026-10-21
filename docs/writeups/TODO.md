@@ -86,7 +86,7 @@ For each item: what to do, why it matters, and which writeup(s) tell you exactly
 
 ### 8. Set up Weights & Biases (W&B) tracking
 
-**Status: not done, but not blocking** - `.env`'s `WANDB_API_KEY` is blank, and training works completely normally without it (this was a deliberate design decision, not an oversight).
+**Status: done and verified on real AWS (2026-10-20); torn down and rebuilt as needed.** The whole of `docs/deploy-runbook.md` was run end to end and the public site served browsing, thumbnails, the read-only blocks and "Check a video" (details and the problems found are in the runbook). Phase 8's code/config side is described in `docs/writeups/phase-8/`. **While it exists it costs real money** (about $2.70 a day: server about $2.0, database about $0.5, disk); remove everything with `bash scripts/stop-dev.sh --destroy-aws`. The older bullets below are the original plan and the problems found on the way; follow the runbook, not them.
 
 - Sign up for a free account at https://wandb.ai, get your API key from https://wandb.ai/authorize.
 - Set `WANDB_API_KEY` (and optionally `WANDB_PROJECT`, defaults to `slop-or-not`) in `.env`.
@@ -189,6 +189,39 @@ For each item: what to do, why it matters, and which writeup(s) tell you exactly
 - **Also fixed along the way:** live scoring overwrote the train/val/test split in `video_scores` for the active model, which `slop model evaluate` reads (`upsert_video_score(preserve_split=...)`). See `docs/writeups/phase-5/stage-6-ingest-and-labels-routers.md` and `phase-7/stage-4-refresh-flow.md` for the updates.
 - **Not exercised:** the rendered dashboard in a browser (only the page's HTTP 200 and the API payloads), and a real Prefect flow run.
 - **Operational notes:** (1) `GET /channels/{id}` takes a channel id only, not a `@handle` - a poll that used a handle got 404 forever, which looked like a failed ingest. (2) During this work the API's `--reload` watcher stalled after a file change (it logged "Reloading..." but never started a new server), so the API kept serving old code; if a new endpoint or field doesn't appear, restart uvicorn by hand. (3) When `start-dev.sh` was launched from a tool-driven shell it did not return within 3 minutes, although the API and frontend were up and healthy; not investigated. (4) The two test channels' videos (`@Computerphile`, `@Numberphile`) are now in the database without labels; delete them if you want a corpus of seed channels only.
+
+### 22. What is left to do (project status, 2026-10-20)
+
+**Status: the build is complete (every roadmap phase is built; the app is deployed and verified on real AWS, with the paste-a-link check and local backups). What remains is data, evaluation, polish and a few decisions of yours.**
+
+1. **Model quality is the real open question.**
+   - There are 105 labeled channels, so effectively 105 independent examples, and the cross-validation scores swing about +/-0.1 between folds. Treat the reported numbers as directional, not precise.
+   - More labeled channels is the biggest lever on accuracy, but it is a cycle, not just seeding: add channels to `data/seed_channels.csv`, `slop ingest seed-channels`, label them, `slop label make-splits`, re-run `slop model cv`, retrain the final models with `--all-data` (both the active model and the video-only one), re-export, redeploy.
+   - **A decision is open:** the video-only XGBoost beat the active logistic-regression model on the cross-validation (channel-mean ROC-AUC 0.892 vs 0.861, `docs/writeups/phase-3/cross-validation.md`). Before switching the main model, re-check with a different seed (`slop model cv --seed N`): several setups were compared on the same data, so the best-looking number is somewhat optimistic. Switching is a two-line `.env` change (`ACTIVE_MODEL_*`).
+2. **Roadmap items still open.**
+   - The SHAP interaction report for the README (item 13).
+   - The README demo GIF: a deployment exists now to record it against (or record it on localhost).
+   - A full successful Prefect flow run (item 17: only a failing run was exercised).
+   - A click-through of the dashboard in a real browser, including the new "Check a video" page (item 21, "Not exercised": only HTTP responses and API payloads have been checked).
+3. **Rough edges of the live site.**
+   - It is plain `http://` on a bare IP address that changes if the server is stopped and started (no Elastic IP); there is no domain and no HTTPS (item 18, optional follow-ups).
+   - It spends your YouTube quota and money while it exists.
+   - Updating it after new labeling is manual: export a snapshot, empty the RDS database, import, copy new thumbnails, publish any new model, update the server `.env`. The import refuses a non-empty database and there is no incremental sync. A one-command "refresh the deployment" is a possible future piece of work.
+4. **Real-use debugging to expect.** The first real AWS run alone found five problems. Real visitors will paste unusual links (Shorts, live streams, premieres, age-restricted or private videos). The model also scores very short videos mostly on their length (401 of the 1,072 stored videos are 3 minutes or less, mostly labeled slop), so a 19-second video from 2005 scored as slop; see `docs/writeups/phase-8/predict-from-a-link.md`.
+5. **Your side (nobody else can do these).**
+   - `git push` from main: local main is ahead of origin.
+   - Rotate the YouTube API key (item 23).
+   - Move the backup folder to another drive or a synced folder (`BACKUP_DIR`; the default shares your disk), and optionally add a daily Windows Task Scheduler entry running `bash scripts/backup.sh` (see `docs/writeups/backup.md`).
+   - Decide whether to keep the AWS deployment running or tear it down (`bash scripts/stop-dev.sh --destroy-aws`).
+
+### 23. Rotate the YouTube Data API key (a precaution, 2026-10-20)
+
+**Status: not done. Your call; low urgency.** "Rotating" a key means creating a new one, switching everything to it, then deleting the old one so it stops working.
+
+- **Why:** the key is a password for your daily quota (10,000 units). During this work a command printed the real key into a session's tool output (it was not committed or pushed, and it only appeared in that session's output). A leaked key cannot take over your account, but anyone holding it could use up the quota, which would break ingesting and the live "Check a video" page. The key also sits in `/opt/slop/.env` on the AWS server (only while that deployment exists).
+- **Steps:** (1) Google Cloud Console, **APIs & Services**, **Credentials**: create a new key and restrict it to the **YouTube Data API v3** only (optionally also by IP address, though your own address may change). (2) Put it in your local `.env` as `YOUTUBE_API_KEY`. (3) Delete the old key in the console; from then on the old value stops working everywhere. (4) If the AWS deployment is still running, update the server's copy too: the server `.env` is `/opt/slop/.env`; change `YOUTUBE_API_KEY` there and restart the api container (`docker compose -f docker-compose.yml -f docker-compose.aws.yml restart api`). If you are tearing the deployment down soon, skip this step.
+- **Never paste the key into chat.** Put it in `.env` and say so; a session can stage it to the server without the value appearing in the conversation.
+- **Verify with:** `uv run slop ingest inspect-channel @somechannel` works locally with the new key, and a prediction on the dashboard's "Check a video" page succeeds on the server.
 
 ---
 
