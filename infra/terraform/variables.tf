@@ -59,9 +59,9 @@ variable "db_engine_version" {
 }
 
 variable "app_instance_type" {
-  description = "EC2 instance type running api+web via docker-compose. 4 GB (t3.medium) is the floor: checking a pasted video link loads three ML models into the api process, which peaked at about 1.7 GB resident in testing - too tight for a 2 GB t3.small once the OS, nginx and Docker are counted."
+  description = "EC2 instance type running api+web via docker-compose. 4 GB of memory is the floor: checking a pasted video link loads three ML models into the api process, which peaked at about 1.7 GB resident in testing, too tight for a 2 GB t3.small once the OS, nginx and Docker are counted. c7i-flex.large (4 GB) is used rather than t3.medium because an AWS Free Tier plan account only launches a short list of types and rejects t3.medium with InvalidParameterCombination; list yours with: aws ec2 describe-instance-types --filters Name=free-tier-eligible,Values=true"
   type        = string
-  default     = "t3.medium"
+  default     = "c7i-flex.large"
 }
 
 variable "ssh_ingress_cidr" {

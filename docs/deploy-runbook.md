@@ -76,7 +76,7 @@ sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-
      -o /usr/local/lib/docker/cli-plugins/docker-compose && sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 docker compose version                           # (use sudo for docker commands in this session)
 ```
-The server is a `t3.medium` (4 GB): the api process peaks around 1.7 GB resident once the three models behind "Check a video" are loaded, which a 2 GB `t3.small` cannot hold. A build can still run short of memory (it installs torch). If a build dies with "Killed", add swap: `sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`.
+The server is a `c7i-flex.large` (4 GB; an AWS Free Tier plan account is only allowed a short list of instance types and refuses `t3.medium`): the api process peaks around 1.7 GB resident once the three models behind "Check a video" are loaded, which a 2 GB `t3.small` cannot hold. On a normal paid account `t3.medium` is cheaper; set `app_instance_type` to use it. A build can still run short of memory (it installs torch). If a build dies with "Killed", add swap: `sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`.
 ```
 # 1. the code (a private repo needs a read-only personal access token as the password)
 git clone https://github.com/<you>/slop-or-not.git && cd slop-or-not
