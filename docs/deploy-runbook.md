@@ -58,9 +58,11 @@ slop deploy copy-thumbnails --dest-bucket <thumbnails bucket> --dest-region us-e
 #    server can load it). The server's role may read the models bucket.
 aws s3 cp snapshot.dump s3://<models bucket>/snapshots/snapshot.dump
 
-# 4. publish the video-only model, so the server can fetch it for "Check a video"
-#    (the version is VIDEO_ONLY_MODEL_VERSION in your local .env)
-slop model publish --model-name xgboost --model-version <video-only version> --s3-bucket <models bucket> --region us-east-2
+# 4. publish the video-only model, so the server can fetch it for "Check a video".
+#    `publish` sends to whatever S3 your environment points at, and your local .env points at
+#    MinIO, so override those variables for this one command (blank = real S3 with your AWS
+#    credentials). The version is VIDEO_ONLY_MODEL_VERSION in your local .env.
+S3_ENDPOINT_URL= S3_ACCESS_KEY= S3_SECRET_KEY= S3_BUCKET_MODELS=<models bucket> AWS_REGION=us-east-2   slop model publish --model-name xgboost --model-version <video-only version>
 ```
 The snapshot contains your labels; delete it from S3 once imported (Part E, step 5). `slop deploy copy-thumbnails` uses your `deployer` profile and never the local MinIO keys.
 
