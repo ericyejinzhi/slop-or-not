@@ -2,7 +2,7 @@
 
 The steps, in order, from an empty AWS account to a public URL. Commands marked **laptop** run in Git Bash on your machine; commands marked **server** run in a Session Manager shell on the EC2 instance.
 
-**Status, stated plainly:** nothing here has been run against real AWS. The Terraform validates (`init`, `validate`, `fmt`), and the data migration, the read-only containers and the model fetch were each rehearsed locally against scratch copies (`docs/writeups/phase-8/`). The **server-side commands in Part E are the least tested**: they assume Amazon Linux 2023 and have never run on a real instance, so expect to adjust a package name or a flag. Everything costs real money while it exists; Part G tears it all down.
+**Status, stated plainly:** this was run end to end on real AWS on 2026-10-20 (apply, data steps, server setup, public checks) and the steps below are the corrected ones. What that run found is in the troubleshooting table at the bottom; the main ones were the Free Tier instance-type limit, the missing Docker `buildx` plugin, and presigned thumbnail links signed for the wrong host (fixed in code). Measured on the server (`c7i-flex.large`, 4 GB): a first prediction took 27 s, later ones 8-11 s; the api container used about 1.4 GB; restarting the api took about 20 s. Everything costs real money while it exists (about $2 a day for the server plus about $0.50 for the database); Part G tears it all down.
 
 What you end up with: `http://<server ip>/` serving the dashboard (Videos and Channels), read-only, with scores precomputed locally. No ingestion, labeling or model scoring in the cloud. The first deployment is deliberately the smallest useful one.
 
@@ -74,7 +74,11 @@ sudo systemctl enable --now docker
 sudo mkdir -p /usr/local/lib/docker/cli-plugins
 sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
      -o /usr/local/lib/docker/cli-plugins/docker-compose && sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-docker compose version                           # (use sudo for docker commands in this session)
+# docker compose needs the buildx plugin to build images; Amazon Linux's docker package does not include it
+BUILDX=$(curl -sI https://github.com/docker/buildx/releases/latest | grep -i '^location' | sed 's#.*/tag/##' | tr -d '\r\n')
+sudo curl -SL "https://github.com/docker/buildx/releases/download/$BUILDX/buildx-$BUILDX.linux-amd64" \
+     -o /usr/local/lib/docker/cli-plugins/docker-buildx && sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
+docker compose version && docker buildx version  # (use sudo for docker commands in this session)
 ```
 The server is a `c7i-flex.large` (4 GB; an AWS Free Tier plan account is only allowed a short list of instance types and refuses `t3.medium`): the api process peaks around 1.7 GB resident once the three models behind "Check a video" are loaded, which a 2 GB `t3.small` cannot hold. On a normal paid account `t3.medium` is cheaper; set `app_instance_type` to use it. A build can still run short of memory (it installs torch). If a build dies with "Killed", add swap: `sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`.
 ```
@@ -126,4 +130,9 @@ Shortcut for walking away: from the main checkout, `bash scripts/stop-dev.sh --d
 | Session Manager "agent not ready", or `aws ssm describe-instance-information` returns nothing, for more than ~10 minutes | The first deployment's server was built from the **Minimal** Amazon Linux 2023 image, which has no SSM agent, because the image was found by a loose name search. Fixed 2026-10-14 (the image now comes from AWS's own pointer for the standard edition). If your server predates the fix, replace it: `terraform apply -replace=aws_instance.app`. Check what a server runs with `aws ec2 describe-instances --instance-ids <id> --query "Reservations[0].Instances[0].ImageId"` then `aws ec2 describe-images --image-ids <ami>`; the name must NOT contain `minimal` |
 | Session Manager "agent not ready" for the first few minutes | the instance is still starting; wait |
 | `apply` fails with `InvalidParameterCombination: Cannot find version ... for postgres` | the pinned engine version was retired; use major version `16` (see Part C) and apply again |
+| `apply` fails with `InvalidParameterCombination: The specified instance type is not eligible for Free Tier` | the account is on an AWS Free Tier plan, which only launches a short list of types. List them: `aws ec2 describe-instance-types --filters Name=free-tier-eligible,Values=true`. The default `c7i-flex.large` (4 GB) is on it; `t3.medium` is not |
+| `docker compose build` says `compose build requires buildx 0.17.0 or later` | install the buildx plugin (Part E) |
+| A script on the server fails with `set: pipefail: invalid option name` | it has Windows (CRLF) line endings, which happens when code is copied from Windows with an archive made while `core.autocrlf` is on. Clone it on the server, or make the archive with `-c core.autocrlf=false` |
+| Thumbnails are broken and the image URL answers `AuthorizationQueryParametersError ... the region 'us-east-2' is wrong; expecting 'us-east-1'` | presigned links pointed at the global S3 host. Fixed in code (`storage.py`); rebuild the api image from a version that has the fix |
+| The api log shows yt-dlp `Sign in to confirm you're not a bot` during a prediction | YouTube blocks yt-dlp from AWS addresses. Predictions still work: the thumbnail is taken from the YouTube API's URL instead. Nothing to do |
 | `apply` failed partway | normal: what was created stays created. Fix the cause, then plan and apply again; Terraform only adds what is missing |
