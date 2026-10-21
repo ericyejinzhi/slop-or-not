@@ -206,7 +206,7 @@ For each item: what to do, why it matters, and which writeup(s) tell you exactly
 3. **Rough edges of the live site.**
    - It is plain `http://` on a bare IP address that changes if the server is stopped and started (no Elastic IP); there is no domain and no HTTPS (item 18, optional follow-ups).
    - It spends your YouTube quota and money while it exists.
-   - Updating it after new labeling is manual: export a snapshot, empty the RDS database, import, copy new thumbnails, publish any new model, update the server `.env`. The import refuses a non-empty database and there is no incremental sync. A one-command "refresh the deployment" is a possible future piece of work.
+   - Deploying and updating are now one command each (`bash scripts/deploy-aws.sh up` / `refresh`, built 2026-10-20; see `docs/writeups/phase-8/deploy-script.md`). It is tested with fakes (33 tests) but **has not yet been run against real AWS**: run `bash scripts/deploy-aws.sh up --plan-only` first (changes nothing), then `up`. The `refresh` step that drops and recreates a database that already holds data (RDS) was never exercised for real. There is still no incremental sync: a refresh replaces the whole database.
 4. **Real-use debugging to expect.** The first real AWS run alone found five problems. Real visitors will paste unusual links (Shorts, live streams, premieres, age-restricted or private videos). The model also scores very short videos mostly on their length (401 of the 1,072 stored videos are 3 minutes or less, mostly labeled slop), so a 19-second video from 2005 scored as slop; see `docs/writeups/phase-8/predict-from-a-link.md`.
 5. **Your side (nobody else can do these).**
    - `git push` from main: local main is ahead of origin.

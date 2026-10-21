@@ -4,7 +4,18 @@ The steps, in order, from an empty AWS account to a public URL. Commands marked 
 
 **Status, stated plainly:** this was run end to end on real AWS on 2026-10-20 (apply, data steps, server setup, public checks) and the steps below are the corrected ones. What that run found is in the troubleshooting table at the bottom; the main ones were the Free Tier instance-type limit, the missing Docker `buildx` plugin, and presigned thumbnail links signed for the wrong host (fixed in code). Measured on the server (`c7i-flex.large`, 4 GB): a first prediction took 27 s, later ones 8-11 s; the api container used about 1.4 GB; restarting the api took about 20 s. Everything costs real money while it exists (about $2 a day for the server plus about $0.50 for the database); Part G tears it all down.
 
-What you end up with: `http://<server ip>/` serving the dashboard (Videos and Channels), read-only, with scores precomputed locally. No ingestion, labeling or model scoring in the cloud. The first deployment is deliberately the smallest useful one.
+What you end up with: `http://<server ip>/` serving the dashboard (Videos and Channels), read-only, with scores precomputed locally. No ingestion or labeling in the cloud (a visitor can check a pasted video link, which changes nothing). The first deployment is deliberately the smallest useful one.
+
+## The short way: one command (once Parts A and B are done)
+Parts C to F are automated by `scripts/deploy-aws.sh` (details: `docs/writeups/phase-8/deploy-script.md`). Run it from the main checkout with the local stack up (`bash scripts/start-dev.sh`):
+```
+bash scripts/deploy-aws.sh up --plan-only   # shows what would be created; changes nothing
+bash scripts/deploy-aws.sh up               # creates everything, loads your data, checks the site
+bash scripts/deploy-aws.sh refresh          # after new labeling: push new data, model and code
+bash scripts/deploy-aws.sh status           # is it up?
+bash scripts/stop-dev.sh --destroy-aws      # tear it down; stops the billing
+```
+Only committed code is deployed, so commit first. The manual steps below are what the script does, kept as the reference and for when something needs fixing by hand.
 
 ## Part A - AWS account (console, once)
 1. Create the account. Turn on **MFA for the root user**, then stop using root.
