@@ -5,6 +5,7 @@ import { ChannelViewPage } from './pages/ChannelViewPage'
 import { LabeledVideosPage } from './pages/LabeledVideosPage'
 import { LabelingPage } from './pages/LabelingPage'
 import { NotFoundPage } from './pages/NotFoundPage'
+import { PredictPage } from './pages/PredictPage'
 import { VideoDetailPage } from './pages/VideoDetailPage'
 import { VideoGridPage } from './pages/VideoGridPage'
 
@@ -16,6 +17,7 @@ export function AppRoutes() {
       <Route element={<Layout />}>
         <Route index element={<VideoGridPage />} />
         <Route path="videos/:videoId" element={<VideoDetailPage />} />
+        <Route path="check" element={<PredictPage />} />
         <Route path="channels" element={<ChannelsPage />} />
         <Route path="channels/:channelId" element={<ChannelViewPage />} />
         <Route path="label" element={<LabelingPage />} />

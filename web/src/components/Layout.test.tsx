@@ -45,6 +45,25 @@ describe('Layout navigation', () => {
     expect(screen.getByRole('link', { name: 'Channels' })).toBeInTheDocument()
   })
 
+  it('shows the Check a video link only when the server can make predictions', async () => {
+    const { unmount } = renderLayout()
+    await screen.findByRole('link', { name: 'Videos' })
+    expect(screen.queryByRole('link', { name: 'Check a video' })).not.toBeInTheDocument()
+    unmount()
+
+    server.use(
+      http.get('/api/config', () =>
+        HttpResponse.json({ read_only: true, predict_enabled: true }),
+      ),
+    )
+    renderLayout()
+
+    expect(await screen.findByRole('link', { name: 'Check a video' })).toHaveAttribute(
+      'href',
+      '/check',
+    )
+  })
+
   it('keeps the links if the config request fails (the API enforces read-only itself)', async () => {
     let asked = false
     server.use(

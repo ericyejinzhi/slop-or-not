@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getChannel, listChannels, type ListChannelsParams } from './channels'
 import { getAppConfig } from './config'
 import { createIngest } from './ingest'
+import { createPrediction } from './predict'
 import {
   createBatchLabel,
   createLabel,
@@ -12,7 +13,12 @@ import {
   type LabelPoolParams,
   type ListLabeledVideosParams,
 } from './labels'
-import type { BatchLabelCreateRequest, IngestRequest, LabelCreateRequest } from './types'
+import type {
+  BatchLabelCreateRequest,
+  IngestRequest,
+  LabelCreateRequest,
+  PredictRequest,
+} from './types'
 import { getVideoDetail, listVideos, type ListVideosParams, type VideoDetailParams } from './videos'
 
 // Whether this deployment accepts writes. Fails open (assumes writable until the server
@@ -26,6 +32,24 @@ export function useReadOnly(): boolean {
     retry: false,
   })
   return data?.read_only ?? false
+}
+
+// Whether this deployment can score a pasted link. Fails closed (assumes no until the
+// server says so): showing a Check-a-video page that cannot work is worse than hiding it.
+export function usePredictEnabled(): boolean {
+  const { data } = useQuery({
+    queryKey: ['config'],
+    queryFn: getAppConfig,
+    staleTime: Infinity,
+    retry: false,
+  })
+  return data?.predict_enabled ?? false
+}
+
+// A prediction is a one-off computation, not cached state: nothing is written server-side,
+// so there is nothing to invalidate afterwards.
+export function usePredict() {
+  return useMutation({ mutationFn: (body: PredictRequest) => createPrediction(body) })
 }
 
 export function useVideos(params: ListVideosParams) {

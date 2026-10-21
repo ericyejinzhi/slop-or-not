@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet } from 'react-router-dom'
-import { useReadOnly } from '../api/hooks'
+import { usePredictEnabled, useReadOnly } from '../api/hooks'
 
 function navLinkClass({ isActive }: { isActive: boolean }): string {
   return `rounded px-3 py-1.5 text-sm font-medium ${
@@ -11,6 +11,8 @@ export function Layout() {
   // Both labeling pages write labels (the Labeled page can relabel a video), so a
   // read-only deployment has nothing useful to show there.
   const readOnly = useReadOnly()
+  // The check-a-video page needs a model and a YouTube key on the server; hide it otherwise.
+  const predictEnabled = usePredictEnabled()
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -19,6 +21,11 @@ export function Layout() {
           <Link to="/" className="text-lg font-semibold text-slate-900">
             slop-or-not
           </Link>
+          {predictEnabled && (
+            <NavLink to="/check" className={navLinkClass}>
+              Check a video
+            </NavLink>
+          )}
           <NavLink to="/" end className={navLinkClass}>
             Videos
           </NavLink>

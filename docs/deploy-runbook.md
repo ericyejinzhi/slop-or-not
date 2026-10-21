@@ -46,7 +46,8 @@ aws rds describe-orderable-db-instance-options --engine postgres --engine-versio
 
 ## Part D - Move the data (laptop)
 ```
-# 1. a snapshot of the local database (no raw comments; only the active model's scores)
+# 1. a snapshot of the local database (no raw comments; only the scores of the active model
+#    and of the video-only model, if VIDEO_ONLY_MODEL_* is set in your .env)
 bash scripts/export-snapshot.sh snapshot.dump
 
 # 2. the thumbnails: local MinIO -> your S3 bucket (1,031 files, ~131 MB; safe to re-run)
@@ -56,6 +57,10 @@ slop deploy copy-thumbnails --dest-bucket <thumbnails bucket> --dest-region us-e
 # 3. hand the snapshot to the server through S3 (the database is private, so only the
 #    server can load it). The server's role may read the models bucket.
 aws s3 cp snapshot.dump s3://<models bucket>/snapshots/snapshot.dump
+
+# 4. publish the video-only model, so the server can fetch it for "Check a video"
+#    (the version is VIDEO_ONLY_MODEL_VERSION in your local .env)
+slop model publish --model-name xgboost --model-version <video-only version> --s3-bucket <models bucket> --region us-east-2
 ```
 The snapshot contains your labels; delete it from S3 once imported (Part E, step 5). `slop deploy copy-thumbnails` uses your `deployer` profile and never the local MinIO keys.
 
@@ -69,7 +74,7 @@ sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-
      -o /usr/local/lib/docker/cli-plugins/docker-compose && sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 docker compose version                           # (use sudo for docker commands in this session)
 ```
-A 2 GB instance can run short of memory while building the api image (it installs torch). If a build dies with "Killed", add swap: `sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`.
+The server is a `t3.medium` (4 GB): the api process peaks around 1.7 GB resident once the three models behind "Check a video" are loaded, which a 2 GB `t3.small` cannot hold. A build can still run short of memory (it installs torch). If a build dies with "Killed", add swap: `sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`.
 ```
 # 1. the code (a private repo needs a read-only personal access token as the password)
 git clone https://github.com/<you>/slop-or-not.git && cd slop-or-not
@@ -94,6 +99,8 @@ Then from your laptop: `aws s3 rm s3://<models bucket>/snapshots/snapshot.dump`.
 - Open `http://<app_public_ip>/`. The Videos page lists videos **with thumbnails and scores**; the Channels page ranks channels; there is no ingest form and no Label/Labeled link.
 - `curl http://<app_public_ip>/api/config` returns `{"read_only":true}`.
 - `curl -X POST http://<app_public_ip>/api/ingest -H 'content-type: application/json' -d '{"channel":"@x"}'` returns HTTP 403.
+- `curl http://<app_public_ip>/api/config` also shows `"predict_enabled":true`, and the nav has a **Check a video** link. Paste a real video link there. **The first check downloads about 2 GB of models from Hugging Face and can take several minutes**; later ones take seconds to tens of seconds. Do one yourself so the first visitor does not.
+- A prediction must change nothing: the Videos page count is the same before and after.
 - On the server, `sudo docker compose ps` shows `api` healthy and `web` running; `sudo docker compose logs api | tail` shows no errors.
 
 ## Part G - Teardown (laptop)

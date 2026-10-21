@@ -2,7 +2,9 @@
 # Builds a deployable snapshot of the local database:
 #   - everything EXCEPT the raw comments (the API never exposes comment text, the features
 #     derived from it are already stored, and ROADMAP.md says not to publish raw comments),
-#   - video_scores reduced to the ACTIVE model's version (older model versions are noise).
+#   - video_scores reduced to the ACTIVE model's version and, when VIDEO_ONLY_MODEL_* is set,
+#     the video-only model's version (older model versions are noise; the video-only scores
+#     feed the channel average on the "check a video" page).
 # It works on a scratch copy inside the local docker postgres container, so the live
 # database is never modified.
 #
@@ -20,6 +22,9 @@ DB_USER="$(env_get POSTGRES_USER)"; DB_USER="${DB_USER:-slop}"
 DB_NAME="$(env_get POSTGRES_DB)";   DB_NAME="${DB_NAME:-slopornot}"
 MODEL_NAME="$(env_get ACTIVE_MODEL_NAME)"
 MODEL_VERSION="$(env_get ACTIVE_MODEL_VERSION)"
+# Optional: blank matches no real score, so unset simply keeps the active model's only.
+VO_NAME="$(env_get VIDEO_ONLY_MODEL_NAME)"
+VO_VERSION="$(env_get VIDEO_ONLY_MODEL_VERSION)"
 if [ -z "$MODEL_NAME" ] || [ -z "$MODEL_VERSION" ]; then
   echo "ACTIVE_MODEL_NAME and ACTIVE_MODEL_VERSION must be set in .env (they pick the scores to keep)." >&2
   exit 1
@@ -41,10 +46,12 @@ pg psql -U "$DB_USER" -d postgres -X -q -v ON_ERROR_STOP=1 \
   -c "DROP DATABASE IF EXISTS $SCRATCH" -c "CREATE DATABASE $SCRATCH"
 pg sh -c "pg_dump -U $DB_USER -Fc $DB_NAME | pg_restore -U $DB_USER -d $SCRATCH --no-owner --no-acl --exit-on-error"
 
-echo "2/5 pruning the scratch copy (no comments; only $MODEL_NAME / $MODEL_VERSION scores)..."
-psql_scratch -v name="$MODEL_NAME" -v ver="$MODEL_VERSION" <<'SQL'
+echo "2/5 pruning the scratch copy (no comments; only $MODEL_NAME / $MODEL_VERSION${VO_VERSION:+ and $VO_NAME / $VO_VERSION} scores)..."
+psql_scratch -v name="$MODEL_NAME" -v ver="$MODEL_VERSION" -v vname="$VO_NAME" -v vver="$VO_VERSION" <<'SQL'
 TRUNCATE comments;
-DELETE FROM video_scores WHERE NOT (model_name = :'name' AND model_version = :'ver');
+DELETE FROM video_scores
+WHERE NOT ((model_name = :'name' AND model_version = :'ver')
+        OR (model_name = :'vname' AND model_version = :'vver'));
 SQL
 KEPT="$(psql_scratch -At -c "SELECT count(*) FROM video_scores")"
 if [ "$KEPT" -eq 0 ]; then

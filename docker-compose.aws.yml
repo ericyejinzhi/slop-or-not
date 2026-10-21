@@ -19,7 +19,17 @@ services:
     # instance. Published on localhost only, for health checks and debugging over a session.
     ports: !override
       - "127.0.0.1:8000:8000"
+    # Predictions download about 2 GB of language and image models from Hugging Face the
+    # first time they run, and fetch the video-only model from S3. Keep both on named
+    # volumes so a rebuilt or recreated container does not download them again.
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+      - models_artifacts:/app/models_artifacts
   web:
     # The security group opens port 80; the base file publishes ${WEB_PORT:-8080}:80.
     ports: !override
       - "80:80"
+
+volumes:
+  hf_cache:
+  models_artifacts:

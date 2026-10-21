@@ -201,4 +201,50 @@ export interface IngestResponse {
 // GET /config - what the deployment allows, so the UI can hide controls that cannot work.
 export interface AppConfig {
   read_only: boolean
+  // Whether POST /predict can run here (a video-only model and a YouTube key are set).
+  // Optional: absent means no.
+  predict_enabled?: boolean
+}
+
+// POST /predict - score one video from its link. Nothing is saved server-side.
+export interface PredictRequest {
+  url: string
+}
+
+export interface PredictionFactor {
+  feature: string
+  label: string
+  value: number | string | null
+  // Log-odds. Positive pushes toward slop, negative away from it.
+  contribution: number
+}
+
+export interface PredictionSimilarVideo {
+  video_id: string
+  title: string
+  distance: number
+  score: number | null
+}
+
+export interface PredictionChannel {
+  channel_id: string
+  title: string | null
+  in_dataset: boolean
+  channel_score: number | null
+  scored_video_count: number
+}
+
+export interface PredictResponse {
+  video_id: string
+  title: string
+  thumbnail_url: string | null
+  score: number
+  predicted_label: 'up' | 'down'
+  factors: PredictionFactor[]
+  similar_videos: PredictionSimilarVideo[]
+  channel: PredictionChannel
+  model_name: string
+  model_version: string
+  comments_used: number
+  warnings: string[]
 }

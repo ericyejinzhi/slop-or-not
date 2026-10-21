@@ -59,9 +59,9 @@ variable "db_engine_version" {
 }
 
 variable "app_instance_type" {
-  description = "EC2 instance type running api+web via docker-compose"
+  description = "EC2 instance type running api+web via docker-compose. 4 GB (t3.medium) is the floor: checking a pasted video link loads three ML models into the api process, which peaked at about 1.7 GB resident in testing - too tight for a 2 GB t3.small once the OS, nginx and Docker are counted."
   type        = string
-  default     = "t3.small"
+  default     = "t3.medium"
 }
 
 variable "ssh_ingress_cidr" {

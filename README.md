@@ -63,6 +63,7 @@ from day one" design goal.
 | Model (`src/sloppy/models/`) | Phases 3-4 | Logistic regression + XGBoost, ablation across metadata/+text/+vision feature groups, SHAP interaction analysis |
 | API (`src/sloppy/api/`) | Phase 5 | FastAPI - paginated video list/detail, channel stats, ingest trigger, labeling endpoint |
 | Dashboard (`web/`) | Phase 6 | React + TypeScript + Tailwind + TanStack Query - video grid, video detail, channel view, web-based labeling |
+| Check a video (`src/sloppy/predict/`) | Phase 8 | Paste a YouTube link, get a slop score and the features behind it, computed in memory with a video-only model; changes nothing in the dataset and stays available on the read-only public copy (rate limited) - see `docs/writeups/phase-8/predict-from-a-link.md` |
 | Orchestration (`src/sloppy/flows/`) | Phase 7 | Prefect - retryable ingest -> features -> score flow, daily-scheduled per tracked channel |
 | Deployment | Phase 8 | Docker Compose locally; reference Terraform (`infra/terraform/`) for an AWS migration - see below |
 
