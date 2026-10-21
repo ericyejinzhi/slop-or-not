@@ -9,6 +9,7 @@ run.
 """
 
 import logging
+from dataclasses import asdict, dataclass
 
 import numpy as np
 from sqlalchemy.orm import Session
@@ -54,6 +55,65 @@ def _select_videos_for_nlp(
     return query.all()
 
 
+@dataclass
+class NlpFeatureValues:
+    """Everything compute_nlp_features stores for one video, as plain values."""
+
+    comment_count_scored: int
+    sentiment_mean: float | None
+    sentiment_std: float | None
+    sentiment_negative_share: float | None
+    slop_keyword_rate: float | None
+    topic_cluster_count: int | None
+    topic_top_cluster_share: float | None
+    topic_top_cluster_sentiment: float | None
+    topic_sentiment_spread: float | None
+    title_lure_score: float
+    title_mysterious_score: float
+    title_transparent_score: float
+    title_embedding: list[float]
+    description_embedding: list[float] | None
+    comment_embedding_mean: list[float] | None
+
+
+def nlp_feature_values(
+    title: str, description: str | None, comment_texts: list[str]
+) -> NlpFeatureValues:
+    """The sentiment / comment-topic / title-intent features for one video, from its own
+    text only. No database or storage access, so it serves both the batch pipeline below
+    (which stores the result) and single-video prediction (which stores nothing)."""
+    sentiment_scores = score_comments(comment_texts)
+    sentiment_agg = aggregate_sentiment(comment_texts, sentiment_scores)
+
+    comment_embeddings = (
+        embed_texts(comment_texts) if comment_texts else np.empty((0, EMBEDDING_DIM))
+    )
+    comment_embedding_mean = comment_embeddings.mean(axis=0).tolist() if comment_texts else None
+    topic_agg = cluster_comment_topics(comment_embeddings, sentiment_scores)
+
+    intent = score_title_intent(title)
+    title_embedding = embed_texts([title])[0].tolist()
+    description_embedding = embed_texts([description])[0].tolist() if description else None
+
+    return NlpFeatureValues(
+        comment_count_scored=sentiment_agg.comment_count_scored,
+        sentiment_mean=sentiment_agg.sentiment_mean,
+        sentiment_std=sentiment_agg.sentiment_std,
+        sentiment_negative_share=sentiment_agg.sentiment_negative_share,
+        slop_keyword_rate=sentiment_agg.slop_keyword_rate,
+        topic_cluster_count=topic_agg.topic_cluster_count,
+        topic_top_cluster_share=topic_agg.topic_top_cluster_share,
+        topic_top_cluster_sentiment=topic_agg.topic_top_cluster_sentiment,
+        topic_sentiment_spread=topic_agg.topic_sentiment_spread,
+        title_lure_score=intent.lure_score,
+        title_mysterious_score=intent.mysterious_score,
+        title_transparent_score=intent.transparent_score,
+        title_embedding=title_embedding,
+        description_embedding=description_embedding,
+        comment_embedding_mean=comment_embedding_mean,
+    )
+
+
 def compute_nlp_features(
     video_id: str | None = None,
     limit: int | None = None,
@@ -73,40 +133,15 @@ def compute_nlp_features(
             comments = session.query(Comment).filter(Comment.video_id == video.id).all()
         texts = [c.text for c in comments]
 
-        sentiment_scores = score_comments(texts)
-        sentiment_agg = aggregate_sentiment(texts, sentiment_scores)
-
-        comment_embeddings = embed_texts(texts) if texts else np.empty((0, EMBEDDING_DIM))
-        comment_embedding_mean = comment_embeddings.mean(axis=0).tolist() if texts else None
-        topic_agg = cluster_comment_topics(comment_embeddings, sentiment_scores)
-
-        intent = score_title_intent(video.title)
-        title_embedding = embed_texts([video.title])[0].tolist()
-        description_embedding = (
-            embed_texts([video.description])[0].tolist() if video.description else None
-        )
+        values = nlp_feature_values(video.title, video.description, texts)
 
         with session_scope() as session:
             upsert_video_nlp_features(
                 session,
                 video_id=video.id,
-                comment_count_scored=sentiment_agg.comment_count_scored,
-                sentiment_mean=sentiment_agg.sentiment_mean,
-                sentiment_std=sentiment_agg.sentiment_std,
-                sentiment_negative_share=sentiment_agg.sentiment_negative_share,
-                slop_keyword_rate=sentiment_agg.slop_keyword_rate,
-                topic_cluster_count=topic_agg.topic_cluster_count,
-                topic_top_cluster_share=topic_agg.topic_top_cluster_share,
-                topic_top_cluster_sentiment=topic_agg.topic_top_cluster_sentiment,
-                topic_sentiment_spread=topic_agg.topic_sentiment_spread,
-                title_lure_score=intent.lure_score,
-                title_mysterious_score=intent.mysterious_score,
-                title_transparent_score=intent.transparent_score,
-                title_embedding=title_embedding,
-                description_embedding=description_embedding,
-                comment_embedding_mean=comment_embedding_mean,
                 sentiment_model=SENTIMENT_MODEL_NAME,
                 embedding_model=EMBEDDING_MODEL_NAME,
+                **asdict(values),
             )
         processed.append((video.id, len(texts)))
 

@@ -37,7 +37,7 @@ def test_read_only_still_serves_reads_and_reports_itself():
     client = _client(read_only=True)
 
     assert client.get("/health").json() == {"status": "ok"}
-    assert client.get("/config").json() == {"read_only": True}
+    assert client.get("/config").json() == {"read_only": True, "predict_enabled": False}
 
 
 def test_read_only_does_not_block_cors_preflight_requests():
@@ -52,7 +52,7 @@ def test_a_writable_app_reaches_the_endpoint_validation_instead_of_a_403():
     # an empty body is a 422 from the endpoint's own validation, proving no middleware
     # intercepted the request (the endpoint is never actually run)
     assert client.post("/ingest", json={}).status_code == 422
-    assert client.get("/config").json() == {"read_only": False}
+    assert client.get("/config").json() == {"read_only": False, "predict_enabled": False}
 
 
 def test_the_module_level_app_follows_the_environment_setting(monkeypatch):

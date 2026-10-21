@@ -94,3 +94,42 @@ def channel_title_self_similarity_mean(
         {"video_id": video_id, "channel_id": channel_id},
     ).scalar()
     return float(result) if result is not None else None
+
+
+def _vector_literal(embedding: list[float]) -> str:
+    """pgvector's text form, e.g. '[0.1,0.2]'. Passed as a bound parameter and cast in SQL,
+    so nothing from the embedding is ever interpolated into the query text."""
+    return "[" + ",".join(repr(float(x)) for x in embedding) + "]"
+
+
+def near_duplicate_count_for_embedding(session: Session, embedding: list[float]) -> int:
+    """near_duplicate_thumbnail_count for a thumbnail that is NOT in the database (a video
+    submitted for prediction): how many stored thumbnails are within
+    NEAR_DUPLICATE_COSINE_DISTANCE of this embedding. Read-only."""
+    result = session.execute(
+        text("""
+            SELECT count(*)
+            FROM video_vision_features other
+            WHERE other.image_embedding <=> CAST(:embedding AS vector) < :threshold
+        """),
+        {"embedding": _vector_literal(embedding), "threshold": NEAR_DUPLICATE_COSINE_DISTANCE},
+    ).scalar()
+    return int(result)
+
+
+def nearest_videos_for_embedding(
+    session: Session, embedding: list[float], k: int = 5, exclude_video_id: str | None = None
+) -> list[tuple[str, float]]:
+    """nearest_videos_by_thumbnail for an embedding that is not in the database, nearest
+    first. `exclude_video_id` drops the video itself when it happens to be stored too."""
+    result = session.execute(
+        text("""
+            SELECT other.video_id, other.image_embedding <=> CAST(:embedding AS vector) AS distance
+            FROM video_vision_features other
+            WHERE other.video_id IS DISTINCT FROM CAST(:exclude AS text)
+            ORDER BY distance ASC
+            LIMIT :k
+        """),
+        {"embedding": _vector_literal(embedding), "exclude": exclude_video_id, "k": k},
+    )
+    return [(row.video_id, float(row.distance)) for row in result]

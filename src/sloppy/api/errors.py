@@ -13,6 +13,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 
+from sloppy.predict.errors import InvalidVideoLink, PredictionUnavailable, VideoNotFound
+
 
 async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
     return JSONResponse(status_code=404, content={"detail": str(exc)})
@@ -29,6 +31,23 @@ async def integrity_error_handler(request: Request, exc: IntegrityError) -> JSON
     )
 
 
+async def invalid_video_link_handler(request: Request, exc: InvalidVideoLink) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+async def video_not_found_handler(request: Request, exc: VideoNotFound) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+async def prediction_unavailable_handler(
+    request: Request, exc: PredictionUnavailable
+) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ValueError, value_error_handler)
     app.add_exception_handler(IntegrityError, integrity_error_handler)
+    app.add_exception_handler(InvalidVideoLink, invalid_video_link_handler)
+    app.add_exception_handler(VideoNotFound, video_not_found_handler)
+    app.add_exception_handler(PredictionUnavailable, prediction_unavailable_handler)

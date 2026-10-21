@@ -174,6 +174,48 @@ class IngestResponse(BaseModel):
     target: str
 
 
+class PredictRequest(BaseModel):
+    # A YouTube video link (watch, youtu.be, Shorts, embed) or a bare 11-character id.
+    url: str = Field(min_length=1, max_length=300)
+
+
+class PredictionFactor(BaseModel):
+    feature: str
+    label: str
+    value: float | str | None
+    contribution: float  # log-odds; positive pushes toward slop, negative away from it
+
+
+class PredictionSimilarVideo(BaseModel):
+    video_id: str
+    title: str
+    distance: float
+    score: float | None
+
+
+class PredictionChannel(BaseModel):
+    channel_id: str
+    title: str | None
+    in_dataset: bool
+    channel_score: float | None
+    scored_video_count: int
+
+
+class PredictResponse(BaseModel):
+    video_id: str
+    title: str
+    thumbnail_url: str | None
+    score: float
+    predicted_label: Literal["up", "down"]
+    factors: list[PredictionFactor]
+    similar_videos: list[PredictionSimilarVideo]
+    channel: PredictionChannel
+    model_name: str
+    model_version: str
+    comments_used: int
+    warnings: list[str]
+
+
 class LabelCreateRequest(BaseModel):
     video_id: str
     labeler: str | None = None

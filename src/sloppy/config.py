@@ -55,6 +55,15 @@ class Settings(BaseSettings):
     video_only_model_name: str = ""
     video_only_model_version: str = ""
 
+    # Single-video prediction (POST /predict). Each prediction spends YouTube API quota and
+    # a minute of CPU, and the endpoint stays open on a read-only deployment, so it is
+    # rate limited per client: this many predictions per hour (0 turns the limit off, for
+    # local use). Behind a reverse proxy every request arrives from the proxy's address;
+    # set trust_proxy_headers only when the API is reachable ONLY through such a proxy, so
+    # the client address can be read from X-Real-IP (a client could forge it otherwise).
+    predict_rate_limit_per_hour: int = 20
+    trust_proxy_headers: bool = False
+
     # Model artifacts in object storage (Phase 8 prep). Trained models live in
     # `models_artifacts/` locally, which is not in git; a fresh server needs them from
     # somewhere. `slop model publish` uploads a model to s3_bucket_models, and with
