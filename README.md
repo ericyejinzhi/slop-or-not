@@ -65,6 +65,7 @@ from day one" design goal.
 | Dashboard (`web/`) | Phase 6 | React + TypeScript + Tailwind + TanStack Query - video grid, video detail, channel view, web-based labeling |
 | Check a video (`src/sloppy/predict/`) | Phase 8 | Paste a YouTube link, get a slop score and the features behind it, computed in memory with a video-only model; changes nothing in the dataset and stays available on the read-only public copy (rate limited) - see `docs/writeups/phase-8/predict-from-a-link.md` |
 | Orchestration (`src/sloppy/flows/`) | Phase 7 | Prefect - retryable ingest -> features -> score flow, daily-scheduled per tracked channel |
+| Backups (`scripts/backup.sh`) | Phase 8 | One-command local backup of the whole database, every label as plain CSV, and the data files; runs automatically when you stop work with `scripts/stop-dev.sh`; restore is safe by default - see `docs/writeups/backup.md` |
 | Deployment | Phase 8 | Docker Compose locally; reference Terraform (`infra/terraform/`) for an AWS migration - see below |
 
 ## Results

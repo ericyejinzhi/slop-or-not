@@ -6,7 +6,12 @@
 # It then prints a read-only report of anything in AWS that is still costing money, so you
 # know before you walk away. The report never changes anything.
 #
-# Usage: bash scripts/stop-dev.sh                 stop local services + AWS billing report
+# Before stopping the database it makes a backup (scripts/backup.sh: the whole database, your
+# labels as plain CSV, and the data files) into ~/slop-or-not-backups, so every time you stop
+# work your labelling is safe. A failed backup is reported loudly but never blocks stopping.
+#
+# Usage: bash scripts/stop-dev.sh                 back up, stop local services, AWS billing report
+#        bash scripts/stop-dev.sh --no-backup     ...without the backup
 #        bash scripts/stop-dev.sh --destroy-aws   also `terraform destroy` the deployment
 #        bash scripts/stop-dev.sh --destroy-aws --yes   ...without the typed confirmation
 #
@@ -17,11 +22,13 @@ set -uo pipefail
 
 DESTROY_AWS=0
 ASSUME_YES=0
+RUN_BACKUP=1
 for arg in "$@"; do
   case "$arg" in
     --destroy-aws) DESTROY_AWS=1 ;;
     --yes) ASSUME_YES=1 ;;
-    *) echo "Unknown option: $arg (use --destroy-aws [--yes])"; exit 2 ;;
+    --no-backup) RUN_BACKUP=0 ;;
+    *) echo "Unknown option: $arg (use --no-backup, --destroy-aws [--yes])"; exit 2 ;;
   esac
 done
 
@@ -55,9 +62,24 @@ for port in 5173 5174 5175 5176 5177 5178; do
   stop_port "$port" "frontend (vite, port $port)"
 done
 
-echo "Stopping docker compose services (postgres, minio, ...)..."
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ROOT="$PWD"
+
+if [ "$RUN_BACKUP" -eq 1 ]; then
+  echo "Backing up the local database (your labels are in it)..."
+  if docker compose ps --status running --services 2>/dev/null | grep -qx postgres; then
+    if bash scripts/backup.sh 2>&1 | sed 's/^/  /'; [ "${PIPESTATUS[0]}" -eq 0 ]; then
+      :
+    else
+      echo "  WARNING: the backup FAILED. Your data is still in the database, but it is NOT backed up."
+      echo "  Run 'bash scripts/backup.sh' by hand to see why before you rely on this."
+    fi
+  else
+    echo "  postgres is not running, so there is nothing to back up."
+  fi
+fi
+
+echo "Stopping docker compose services (postgres, minio, ...)..."
 docker compose stop
 
 # Read-only: list the AWS resources that bill while they exist. Prints the number of
