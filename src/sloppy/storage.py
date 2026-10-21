@@ -7,9 +7,18 @@ from sloppy.config import Settings
 
 
 def get_s3_client(settings: Settings):
+    config_kwargs: dict = {"signature_version": "s3v4"}
+    if not settings.s3_endpoint_url:
+        # Real AWS S3. boto3's default addressing builds presigned URLs against the GLOBAL
+        # host (bucket.s3.amazonaws.com) even though it signs them for the bucket's region,
+        # and S3 rejects that for any bucket outside us-east-1 ("the region 'us-east-2' is
+        # wrong; expecting 'us-east-1'"). Virtual-host addressing puts the region in the host
+        # (bucket.s3.us-east-2.amazonaws.com). MinIO must NOT get this: it needs path-style
+        # URLs, so it is only applied when there is no custom endpoint.
+        config_kwargs["s3"] = {"addressing_style": "virtual"}
     kwargs: dict = {
         "endpoint_url": settings.s3_endpoint_url,
-        "config": Config(signature_version="s3v4"),
+        "config": Config(**config_kwargs),
         "region_name": settings.aws_region,
     }
     # Only pass explicit credentials if both are set - passing None/blank ones would

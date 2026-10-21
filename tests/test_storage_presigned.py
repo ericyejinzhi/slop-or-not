@@ -33,3 +33,48 @@ def test_generate_presigned_url_is_fetchable_without_credentials():
         assert response.content == TEST_S3_BODY
     finally:
         _cleanup(client, bucket)
+
+
+def _offline_settings(**overrides):
+    from sloppy.config import Settings
+
+    values = {
+        "_env_file": None,
+        "s3_endpoint_url": None,
+        "s3_access_key": "AKIAEXAMPLE",
+        "s3_secret_key": "secret",
+        "aws_region": "us-east-2",
+    }
+    values.update(overrides)
+    return Settings(**values)
+
+
+def test_presigned_urls_for_real_s3_name_the_buckets_region_in_the_host():
+    # Regression: with only a region set, boto3 signed for us-east-2 but pointed the URL at
+    # the global host, and S3 answered 400 AuthorizationQueryParametersError on a real
+    # deployment. The region must appear in the host.
+    client = get_s3_client(_offline_settings())
+
+    url = generate_presigned_url(client, "my-bucket", "k.jpg")
+
+    assert url.startswith("https://my-bucket.s3.us-east-2.amazonaws.com/k.jpg?")
+    assert "X-Amz-Credential=AKIAEXAMPLE%2F" in url
+    assert "us-east-2%2Fs3%2Faws4_request" in url
+
+
+def test_presigned_urls_for_real_s3_in_us_east_1_still_work():
+    client = get_s3_client(_offline_settings(aws_region="us-east-1"))
+
+    url = generate_presigned_url(client, "my-bucket", "k.jpg")
+
+    assert url.startswith("https://my-bucket.s3.")
+    assert "amazonaws.com/k.jpg?" in url
+
+
+def test_a_custom_endpoint_such_as_minio_keeps_path_style_urls():
+    client = get_s3_client(_offline_settings(s3_endpoint_url="http://localhost:9000"))
+
+    url = generate_presigned_url(client, "my-bucket", "k.jpg")
+
+    # bucket in the path, not as a subdomain of the endpoint (which would not resolve)
+    assert url.startswith("http://localhost:9000/my-bucket/k.jpg?")
