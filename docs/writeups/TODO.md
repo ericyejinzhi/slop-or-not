@@ -223,6 +223,39 @@ For each item: what to do, why it matters, and which writeup(s) tell you exactly
 - **Never paste the key into chat.** Put it in `.env` and say so; a session can stage it to the server without the value appearing in the conversation.
 - **Verify with:** `uv run slop ingest inspect-channel @somechannel` works locally with the new key, and a prediction on the dashboard's "Check a video" page succeeds on the server.
 
+### 24. Next work, chosen by the owner (added 2026-10-22)
+
+**Status: not started. Three directions: more data, more models, more security. They are independent and can be done in any order, though more data should come before any model comparison you want to trust.**
+
+1. **Seed and label more channels.**
+   - **Why:** there are 105 labeled channels, so the cross-validation scores swing about +/-0.1 between folds (item 22). More channels is the biggest single lever on both accuracy and on how far the numbers can be trusted.
+   - **The loop:** add handles to `data/seed_channels.csv`, `uv run slop ingest seed-channels`, label them on the dashboard's Label page, `uv run slop label make-splits`, `uv run slop model cv --ablation --channel-level --repeats 3` to see the effect, retrain the final models with `--all-data` (the active model and the video-only model), update the version numbers in `.env`, then redeploy with `bash scripts/deploy-aws.sh refresh` if the site is up.
+   - **Choose channels on purpose:** keep the labeled mix reasonably balanced between slop and not-slop, and spread them across genres. Labeling only obvious slop or only obvious quality makes the model look better than it is on the hard middle. The short-video behavior noted in item 22 is the kind of gap more varied channels would show.
+   - **Hold some back:** label a small batch of new channels and do NOT use it while choosing between models; score it once at the end as an honest check, because several setups have already been compared on the current data.
+   - **Protect the work:** `scripts/stop-dev.sh` backs up your labels each time you stop (`docs/writeups/backup.md`); run `bash scripts/backup.sh` yourself before a large ingest.
+2. **Add new models for exploration.** These are ideas, not decisions. Today there are two estimators (`MODEL_NAMES` in `src/sloppy/models/train.py`: logistic regression and XGBoost) over 38 hand-built features.
+   - **Use the stored embeddings directly.** The database already holds a title embedding, a description embedding, a comment-embedding mean and a CLIP image embedding per video, but the models only see summary numbers derived from them. A model on the embeddings themselves (alone, or added to the 32 video-only features) is the most promising untried direction.
+   - **A channel-level model.** Labels are per channel and the channel average already beats single videos, so train directly on per-channel aggregates of the features instead of averaging video scores afterwards.
+   - **Other tree and linear models,** for example LightGBM or a random forest, and stronger regularization on the logistic regression, which loses accuracy without the channel features (item 22).
+   - **Calibration and thresholds.** Check whether a score of 0.8 really means "slop 80% of the time", and whether 0.5 is the right cut-off (`slop model cv --threshold-sweep` exists).
+   - **Ensembling,** averaging the logistic and XGBoost scores.
+   - **How to add one:** register it in `MODEL_NAMES` and `_build_estimator` in `src/sloppy/models/train.py`, then compare it with `slop model cv --ablation --channel-level --repeats 3` against the existing models on identical channel-grouped folds. The paired differences in that output are the number to read, not the single best score. A new model that is also meant to score a single pasted link must be trained on the `video_only` feature group.
+3. **Work on security.** What is already done, and what is open.
+   - **Already in place (checked in the Terraform and code):** the database is not publicly reachable, the disk is encrypted, both buckets block public access, the server has no SSH (Session Manager only) and only port 80 open, a read-only mode refuses every write on the public site, raw comment text is never returned by the API (item 19), `/predict` is rate limited and takes one prediction at a time, and links are validated strictly before anything is fetched.
+   - **Open, roughly in priority order:**
+     - **Rotate the YouTube key** and restrict it to the YouTube Data API (item 23).
+     - **HTTPS and a domain.** The public site is plain `http://` on an address that changes whenever the server is recreated. Add a domain and a TLS certificate (a load balancer or CloudFront, or a small reverse proxy that gets free certificates).
+     - **Make the instance's S3 access read-only.** The server's role can write to the thumbnails bucket (`s3:PutObject` in `infra/terraform/ec2.tf`), but the read-only app only ever reads it. Least privilege: drop the write permission.
+     - **Require IMDSv2 on the server** (`metadata_options { http_tokens = "required" }` on the instance). Nothing in `ec2.tf` sets it today.
+     - **Decide whether your labels should be public.** Every GET stays open on the read-only site, including the labeled-videos list (`docs/writeups/phase-8/read-only-mode-and-model-artifacts.md`). Disable those routes in read-only mode if you do not want them public.
+     - **Secrets on the server.** The database password and the YouTube key sit in `/opt/slop/.env`, and the deploy script passes them through the private bucket for a few minutes (then deletes them). A managed secret store (SSM Parameter Store, SecureString) would avoid both.
+     - **Abuse and cost limits on the public predict page.** The rate limit is per process and in memory; it resets on restart and does not stop many different addresses. Consider a daily global cap on predictions, a CAPTCHA, or putting a login in front of it, and keep the AWS budget alert from the runbook (Part A) switched on.
+     - **Model files are pickles.** Anyone who can write to the models bucket can run code on the server (`docs/writeups/phase-8/read-only-mode-and-model-artifacts.md`). Keep write access to your own credentials only; a checksum recorded outside the bucket would add a check.
+     - **Dependency and secret scanning:** `uv`/`npm audit` and an automated alert (for example Dependabot) when a library has a known vulnerability. The pre-commit hook already blocks committed private keys.
+     - **Protect the backups.** They contain your labels and all collected comments; if the backup folder is synced to a cloud drive, encrypt it or keep it out of the sync.
+     - **Never print secrets.** One session printed the YouTube key by running `docker compose config`, which expands `.env`. Avoid commands that dump `.env` values.
+   - **Verify with:** after each change, re-run `bash scripts/deploy-aws.sh up --plan-only` for the infrastructure items, and check the live site as the deploy script's final step does (read-only, ingest refused, thumbnails load, a prediction works).
+
 ---
 
 ## How to keep this list current
