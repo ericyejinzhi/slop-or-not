@@ -75,3 +75,41 @@ the roadmap didn't anticipate.
 - **Actual**: `score_comments` passes `truncation=True, max_length=512`.
 - **Why**: real comments over the RoBERTa limit crashed `compute-nlp`.
 - **Follow-up**: none; only the first 512 tokens of a very long comment influence its score.
+
+## Phases 2-8 - changes found after the first real runs (summary, 2026-10-26)
+
+### Labels are per channel, not per video
+
+- **Intended**: ROADMAP.md Phase 2: per-video labels in shuffled order, "never channel-by-channel".
+- **Actual**: a random sample of each channel's recent videos (default 10 of the last 75
+  uploads) gets one judgment for the whole batch. Per-video labeling remains for exceptions.
+- **Why**: most channels are internally consistent, so per-video labeling mostly re-derived the
+  channel's reputation for little extra signal, and a channel batch allows many more channels.
+- **Consequence**: the model must be evaluated grouped by channel (`slop model cv`), and the
+  corpus is 105 labeled channels rather than 300-500 videos. See `docs/writeups/TODO.md` item 2.
+
+### Additions beyond the roadmap
+
+- **Channel-level scores** (the mean of a channel's video scores), because they separate slop
+  channels better than single videos. API `GET /channels`, a Channels page.
+- **A `video_only` feature group and a "Check a video" page** (`POST /predict`): scores a pasted
+  link in memory with a model that needs no channel history. Not in the roadmap.
+- **`READ_ONLY` mode, S3-backed model artifacts, and data migration tools** for the public copy.
+- **`scripts/deploy-aws.sh`** (one-command deploy, refresh, status) and **local backups**
+  (`scripts/backup.sh`, run by `stop-dev.sh`).
+
+### AWS deployment differed from the Terraform as first written (2026-10-14 to 2026-10-20)
+
+- **Actual**: RDS asks for Postgres major version `16` (the pinned `16.4` was retired); the
+  server image comes from AWS's standard Amazon Linux 2023 pointer (the Minimal image has no
+  SSM agent); the instance type is `c7i-flex.large` (a Free Tier plan account cannot launch
+  `t3.medium`); the root disk is 30 GB; access is by Session Manager, not SSH; the server
+  starts with `-f docker-compose.yml -f docker-compose.aws.yml`.
+- **Why**: each was a failure only a real apply or a real server could show. Full list and
+  fixes: `docs/deploy-runbook.md` troubleshooting table.
+- **Follow-up**: no domain or HTTPS yet; security items in `docs/writeups/TODO.md` item 24.
+
+### Unrun items
+
+- The SHAP interaction report has not been run on the real model, and a full successful Prefect
+  flow run was never exercised (only a failing one). See TODO.md item 22.

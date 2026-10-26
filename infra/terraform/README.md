@@ -2,7 +2,7 @@
 
 Terraform describing the AWS resources `ROADMAP.md`'s Phase 8 calls for: an S3 bucket (replacing MinIO), an RDS Postgres instance (replacing the docker-compose `postgres` service), and a single EC2 instance running `api` + `web` via docker-compose (the roadmap's own "simplest" option, over ECS).
 
-**This has never been `terraform apply`d and describes no resources that currently exist.** There is no AWS account, credentials, or billing set up anywhere in this project's development environment - confirmed directly before writing any of this. It exists as reference architecture: real, valid, `terraform validate`-passing Terraform, ready to actually provision from whenever real AWS access exists and the decision is made to do so.
+**This was applied for real on 2026-10-20 (us-east-2) and the resulting site was verified; it has since been destroyed, so no resources are expected to exist.** The first real apply found two problems a plan cannot (a retired RDS engine version and the Minimal Amazon Linux image), both fixed; see `docs/deploy-runbook.md`. The plan is 15 resources, the server defaults to a `c7i-flex.large`, and the normal way to apply and destroy is `bash scripts/deploy-aws.sh up` and `bash scripts/stop-dev.sh --destroy-aws` rather than running Terraform by hand. While deployed it costs about $2.70 a day. The "what was verified" section below is the earlier, pre-credentials check and is kept for reference.
 
 ## What was actually verified, and how
 

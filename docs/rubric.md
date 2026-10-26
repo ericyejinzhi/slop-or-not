@@ -1,5 +1,7 @@
 # The Slop Rubric
 
+> **Note (2026-10-26):** the rubric itself is unchanged, but how it is applied changed. Labels are now given per channel: a small random sample of a channel's videos (default 10 of its last 75 uploads) gets one up/down/skip judgment, and per-video labeling remains for exceptions (see `DEVIATIONS.md`). The corpus is 105 labeled channels, not the "300-500 videos" mentioned below.
+
 ## 1. Purpose & scope
 
 This document exists so that "slop or not" means the same thing on day 1 and day 30 of labeling, and the same thing whether the video in front of you is a gaming channel or a cooking channel. Labeling ~300-500 videos will take multiple sessions spread over more than a week; without a written definition, judgment drifts - a video that gets `down` on Monday might get `up` on Friday just because the last ten videos were worse. This doc is also the intellectual core of the whole project: it's the operational definition the rest of the pipeline (features, model, evaluation) is ultimately trying to predict, so it belongs in the README as much as in this repo.

@@ -1,5 +1,7 @@
 # Phase 8 - AWS migration + polish (full write-up)
 
+> **Update (2026-10-26):** this write-up describes Phase 8 as first built, when no AWS account existed. Since then the deployment was run for real on AWS (2026-10-20, `docs/deploy-runbook.md`), and Phase 8 grew: read-only mode and S3 model artifacts, data migration tools, "Check a video" (`predict-from-a-link.md`), the one-command deploy script (`deploy-script.md`), and local backups (`../backup.md`). Where the text below says nothing was applied or no account exists, that was true then and is not now.
+
 This covers the whole of Phase 8 end-to-end. For stage-by-stage detail, see `stage-1-aws-config-compatibility.md` through `stage-4-readme-overhaul.md` in this same directory.
 
 ## What is being implemented

@@ -1,32 +1,33 @@
-# React + TypeScript + Vite
+# Slop-or-Not dashboard (`web/`)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + TypeScript + Vite, with Tailwind and TanStack Query. It talks to the FastAPI backend
+through `/api/*` (the Vite dev server proxies to `localhost:8000`; in production nginx proxies
+to the `api` container).
 
-Currently, two official plugins are available:
+## Pages (`src/pages/`)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+| Route | Page | Notes |
+|---|---|---|
+| `/` | Videos grid | sort and filter, score badges |
+| `/videos/:videoId` | Video detail | score, feature breakdown, similar videos |
+| `/channels` | Channels | ranked by channel score |
+| `/channels/:channelId` | Channel view | channel score and its videos |
+| `/check` | Check a video | paste a YouTube link, get a score; changes nothing in the dataset |
+| `/label`, `/labeled` | Labeling and labeled-videos review | hidden when the API reports `read_only` |
 
-## React Compiler
+The ingest form and the labeling links are hidden when `GET /config` reports
+`read_only: true` (a public deployment). The Check a video link shows when `predict_enabled`
+is true.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Commands
 
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```powershell
+npm install
+npm run dev        # http://localhost:5173, proxies /api to :8000
+npx vitest run     # tests (the Vitest pool is set to threads for Windows)
+npm run lint       # oxlint
+npm run build      # production bundle; web/Dockerfile + nginx.conf serve it
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Project-wide docs: [../README.md](../README.md). Build notes for this app:
+[../docs/writeups/phase-6/](../docs/writeups/phase-6/).

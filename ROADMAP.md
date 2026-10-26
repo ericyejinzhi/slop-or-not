@@ -3,6 +3,13 @@
 > YouTube content-quality classifier ("slop or not") using video metadata, comments,
 > thumbnails, channel sentiment, and cross-video similarity.
 
+> **Status (2026-10-26): all phases 0 to 8 are built.** This file is the original plan and is
+> not rewritten as things change. What actually happened differs in places: see
+> [DEVIATIONS.md](DEVIATIONS.md) (for example, labels became per channel, not per video) and
+> [docs/writeups/TODO.md](docs/writeups/TODO.md) (current status and next work). Added beyond
+> the plan: channel-level scores, a video-only model with a "Check a video" page, a read-only
+> public mode, a one-command AWS deploy script, and local backups.
+
 ## Project decisions
 
 - **Labels**: manual labeling (~300–500 videos, hand-labeled against a written rubric)

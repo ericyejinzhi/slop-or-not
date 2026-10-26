@@ -1,5 +1,7 @@
 # Phase 8, Stage 4 - README overhaul
 
+> **Update (2026-10-26):** this describes the README as first rewritten. It has since been updated again: real results (105 labeled channels, cross-validation numbers), the Check a video page, the real AWS deployment and `scripts/deploy-aws.sh`, and backups. The "no real videos labeled yet" and "never applied" statements below no longer hold.
+
 ## What is being implemented
 
 `README.md` rewritten from its Phase 0 state (a 4-step quickstart and nothing else) into what `ROADMAP.md`'s own Phase 8 bullet calls for: an architecture diagram, a rubric summary, and placeholders for ablation results and a demo GIF - plus updated quickstart/development/deployment sections reflecting all 7 phases actually built since Phase 0, none of which the old README mentioned at all (no API, no dashboard, no orchestration, no Docker Compose beyond `postgres`/`minio`).
